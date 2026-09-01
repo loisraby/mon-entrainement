@@ -1,4 +1,5 @@
 const days = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+const DRAFT_KEY = "seance_en_cours";
 let sessions = {};
 let timerInterval = null;
 
@@ -9,15 +10,77 @@ const historyPanel = document.querySelector("#history-panel");
 const historyList = document.querySelector("#history-list");
 const statsPanel = document.querySelector("#stats-panel");
 const statsContent = document.querySelector("#stats-content");
+const draftPanel = document.querySelector("#draft-panel");
+const draftMessage = document.querySelector("#draft-message");
 const todayIndex = (new Date().getDay() + 6) % 7;
 
 document.querySelector("#history-button").addEventListener("click", () => afficherHistorique());
 document.querySelector("#stats-button").addEventListener("click", () => afficherStatistiques());
 document.querySelector("#export-button").addEventListener("click", exporterHistorique);
 document.querySelector("#import-input").addEventListener("change", importerHistorique);
+document.querySelector("#resume-draft").addEventListener("click", reprendreSeanceEnCours);
+document.querySelector("#discard-draft").addEventListener("click", annulerSeanceEnCours);
 
 function getHistorique() {
   return JSON.parse(localStorage.getItem("historique") || "[]");
+}
+
+function getSeanceEnCours() {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function sauvegarderSeanceEnCours(day, session) {
+  const ancienneSeance = getSeanceEnCours();
+  const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
+    const charge = Number(card.querySelector(".weight").value) || 0;
+    const series = Number(card.querySelector(".sets").value) || 0;
+    const repetitions = Number(card.querySelector(".reps").value) || 0;
+    return {
+      nom: card.querySelector(".exercise-name").textContent,
+      charge,
+      series,
+      repetitions,
+      termine: card.classList.contains("completed"),
+    };
+  });
+  const brouillon = {
+    jour: day,
+    nom: session.title,
+    commenceeLe: ancienneSeance?.commenceeLe || new Date().toISOString(),
+    modifieeLe: new Date().toISOString(),
+    exercices,
+  };
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(brouillon));
+}
+
+function afficherSeanceEnCours() {
+  const brouillon = getSeanceEnCours();
+  if (!brouillon) {
+    draftPanel.classList.add("hidden");
+    return;
+  }
+  draftMessage.textContent = `${brouillon.nom} · dernière sauvegarde : ${new Date(brouillon.modifieeLe).toLocaleString("fr-FR")}`;
+  draftPanel.classList.remove("hidden");
+}
+
+function reprendreSeanceEnCours() {
+  const brouillon = getSeanceEnCours();
+  if (!brouillon || !sessions[brouillon.jour]) return;
+  draftPanel.classList.add("hidden");
+  renderDay(brouillon.jour, brouillon);
+}
+
+function annulerSeanceEnCours() {
+  const brouillon = getSeanceEnCours();
+  if (!brouillon) return;
+  if (!confirm(`Annuler la séance « ${brouillon.nom} » ? Les charges et reps saisies seront effacées.`)) return;
+  localStorage.removeItem(DRAFT_KEY);
+  draftPanel.classList.add("hidden");
+  renderDay(days[todayIndex]);
 }
 
 function exporterHistorique() {
@@ -92,6 +155,14 @@ function updateTotalVolume() {
   });
   document.querySelector("#session-total").textContent = `Volume total : ${formatKg(total)} kg`;
   return total;
+}
+
+function updateSessionProgress() {
+  const cards = [...workout.querySelectorAll(".exercise-card")];
+  const completed = cards.filter((card) => card.classList.contains("completed")).length;
+  const progress = workout.querySelector("#session-progress");
+  if (progress) progress.textContent = `${completed} / ${cards.length} exercices terminés`;
+  return { completed, total: cards.length };
 }
 
 function afficherHistorique(forceOpen = false) {
@@ -291,6 +362,7 @@ async function chargerProgramme() {
   const programme = await reponse.json();
   sessions = programme.seances;
   renderDay(days[todayIndex]);
+  afficherSeanceEnCours();
 }
 
 function trouverDernierePerformance(nomExercice) {
@@ -319,7 +391,7 @@ function demarrerMinuteur(secondes) {
   timerInterval = setInterval(afficherTemps, 1000);
 }
 
-function renderDay(day) {
+function renderDay(day, brouillon = null) {
   selector.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.textContent === day);
   });
@@ -330,7 +402,8 @@ function renderDay(day) {
     return;
   }
 
-  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p><p id="session-total" class="muted">Volume total : 0 kg</p>`);
+  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p><p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p>`);
+  const seanceEnCours = brouillon || getSeanceEnCours();
   session.exercises.forEach(([name, target, weight, note, restSeconds = 90]) => {
     const card = template.content.cloneNode(true);
     card.querySelector(".exercise-name").textContent = name;
@@ -343,16 +416,40 @@ function renderDay(day) {
     card.querySelector(".last-performance").textContent = dernierePerformance
       ? `Dernière fois : ${dernierePerformance.series} × ${dernierePerformance.repetitions} à ${dernierePerformance.charge} kg`
       : "Aucune performance enregistrée.";
-    card.querySelector(".weight").value = weight;
-    card.querySelector(".sets").value = target.split(" ")[0];
-    card.querySelectorAll("input").forEach((input) => input.addEventListener("input", () => updateVolume(input.closest(".exercise-card"))));
+    const ancienExercice = seanceEnCours?.jour === day
+      ? (seanceEnCours.exercices || []).find((exercice) => exercice.nom === name)
+      : null;
+    card.querySelector(".weight").value = ancienExercice?.charge ?? weight;
+    card.querySelector(".sets").value = ancienExercice?.series ?? target.split(" ")[0];
+    card.querySelector(".reps").value = ancienExercice?.repetitions ?? "";
+    if (ancienExercice?.termine) {
+      card.querySelector(".exercise-card").classList.add("completed");
+      card.querySelector(".complete-exercise").textContent = "Modifier l’exercice";
+      card.querySelector(".exercise-status").textContent = "Terminé ✓";
+    }
+    card.querySelectorAll("input").forEach((input) => input.addEventListener("input", () => {
+      updateVolume(input.closest(".exercise-card"));
+      sauvegarderSeanceEnCours(day, session);
+    }));
     card.querySelectorAll(".rest-button").forEach((button) => button.addEventListener("click", () => demarrerMinuteur(Number(button.dataset.seconds))));
+    card.querySelector(".complete-exercise").addEventListener("click", (event) => {
+      const exerciseCard = event.currentTarget.closest(".exercise-card");
+      const completed = exerciseCard.classList.toggle("completed");
+      event.currentTarget.textContent = completed ? "Modifier l’exercice" : "Exercice terminé";
+      exerciseCard.querySelector(".exercise-status").textContent = completed ? "Terminé ✓" : "";
+      updateSessionProgress();
+      sauvegarderSeanceEnCours(day, session);
+      if (completed) demarrerMinuteur(restSeconds);
+    });
     workout.append(card);
   });
 
   workout.querySelectorAll(".exercise-card").forEach(updateVolume);
+  updateSessionProgress();
   workout.insertAdjacentHTML("beforeend", "<button id='finish-button' class='finish-button'>Terminer la séance</button>");
   workout.querySelector("#finish-button").addEventListener("click", () => {
+    const progress = updateSessionProgress();
+    if (!confirm(`Enregistrer cette séance ? ${progress.completed} / ${progress.total} exercices sont marqués comme terminés.`)) return;
     const volume = updateTotalVolume();
     const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
       const charge = Number(card.querySelector(".weight").value) || 0;
@@ -364,6 +461,11 @@ function renderDay(day) {
     const seanceTerminee = { id: Date.now(), date: new Date().toISOString(), jour: day, nom: session.title, volume, exercices };
     historique.push(seanceTerminee);
     localStorage.setItem("historique", JSON.stringify(historique));
+    localStorage.removeItem(DRAFT_KEY);
+    draftPanel.classList.add("hidden");
+    const finishButton = workout.querySelector("#finish-button");
+    finishButton.disabled = true;
+    finishButton.textContent = "Séance enregistrée ✓";
     alert(`Séance enregistrée !\n${seanceTerminee.nom}\nVolume total : ${formatKg(volume)} kg\nSéances sauvegardées : ${historique.length}`);
   });
 }

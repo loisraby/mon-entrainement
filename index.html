@@ -31,6 +31,14 @@
       </header>
 
       <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>
+      <section id="draft-panel" class="draft-panel hidden" aria-live="polite">
+        <strong>Séance en cours retrouvée</strong>
+        <p id="draft-message" class="muted"></p>
+        <div class="draft-actions">
+          <button id="resume-draft" class="resume-button">Reprendre</button>
+          <button id="discard-draft" class="discard-button">Annuler la séance</button>
+        </div>
+      </section>
       <section class="timer-box">
         <span>Minuteur de repos</span>
         <strong id="timer-display">1:30</strong>
@@ -67,6 +75,10 @@
           <label>Reps<input class="reps" type="number" min="0" max="100" /></label>
         </div>
         <p class="volume muted"></p>
+        <div class="exercise-actions">
+          <button class="complete-exercise" type="button">Exercice terminé</button>
+          <span class="exercise-status"></span>
+        </div>
       </article>
     </template>
 

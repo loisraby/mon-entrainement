@@ -72,6 +72,45 @@ input { width: 100%; border: 1px solid var(--line); border-radius: 10px; backgro
   font-weight: 800;
   padding: 15px;
 }
+
+.session-progress { color: var(--green); font-weight: 800; }
+
+.exercise-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.complete-exercise {
+  border: 1px solid var(--green);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 800;
+  padding: 9px 11px;
+}
+
+.exercise-status { color: var(--green); font-size: .82rem; font-weight: 800; }
+
+.exercise-card.completed {
+  background: rgba(46, 199, 154, .08);
+  border-radius: 12px;
+  padding: 15px 12px;
+}
+
+.exercise-card.completed .inputs,
+.exercise-card.completed .volume,
+.exercise-card.completed .rest-actions,
+.exercise-card.completed .last-performance { display: none; }
+
+.exercise-card.completed .complete-exercise {
+  border-color: var(--line);
+  color: var(--muted);
+}
 .history-button {
   margin-top: 14px;
   border: 1px solid var(--line);
@@ -106,6 +145,30 @@ input { width: 100%; border: 1px solid var(--line); border-radius: 10px; backgro
 .import-label { display: inline-flex; align-items: center; }
 .import-label input { display: none; }
 .backup-hint { font-size: .78rem; margin: 9px 0 0; }
+
+.draft-panel {
+  border: 1px solid #23866c;
+  border-radius: 16px;
+  background: #12382e;
+  margin: 2px 0 16px;
+  padding: 14px;
+}
+
+.draft-panel p { font-size: .88rem; margin: 5px 0 12px; }
+.draft-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.resume-button,
+.discard-button {
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.resume-button { background: var(--green); border: 0; color: #08241c; }
+.discard-button { background: transparent; border: 1px solid #d95c5c; color: #ff9a9a; }
 .hidden {
   display: none;
 }
