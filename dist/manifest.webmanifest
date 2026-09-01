@@ -1,0 +1,10 @@
+{
+  "name": "Mon entraînement",
+  "short_name": "Entraînement",
+  "description": "Suivi personnel de mes séances de musculation.",
+  "lang": "fr",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#101315",
+  "theme_color": "#101315"
+}

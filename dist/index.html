@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101315" />
+    <title>Mon entraînement</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">      
+      <header>
+        <p class="eyebrow">MON ENTRAÎNEMENT</p>
+        <h1 id="date-title">Aujourd'hui</h1>
+        <p id="date-subtitle" class="muted"></p>
+        <button id="history-button" class="history-button">
+          Voir l’historique
+        </button>
+        <button id="stats-button" class="history-button">
+          Voir les statistiques
+        </button>
+        <div class="backup-actions">
+          <button id="export-button" class="backup-button">Sauvegarder mes données</button>
+          <label class="backup-button import-label">
+            Restaurer une sauvegarde
+            <input id="import-input" type="file" accept="application/json" />
+          </label>
+        </div>
+        <p class="backup-hint muted">Garde ce fichier : il te permettra de retrouver tes séances sur un autre appareil.</p>
+      </header>
+
+      <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>
+      <section class="timer-box">
+        <span>Minuteur de repos</span>
+        <strong id="timer-display">1:30</strong>
+      </section>
+      <section id="workout" class="workout-card"></section>
+      <section id="history-panel" class="history-panel hidden">
+        <h2>Historique</h2>
+        <div id="history-list"></div>
+      </section>
+      <section id="stats-panel" class="history-panel hidden">
+        <h2>Statistiques</h2>
+        <div id="stats-content"></div>
+      </section>
+    </main>
+
+    <template id="exercise-template">
+      <article class="exercise-card">
+        <div class="exercise-heading">
+          <div>
+            <h3 class="exercise-name"></h3>
+            <p class="exercise-note muted"></p>
+            <div class="rest-actions">
+              <button class="rest-button" data-seconds="60">Repos 60 s</button>
+              <button class="rest-button" data-seconds="90">Repos 90 s</button>
+              <button class="rest-button" data-seconds="120">Repos 2 min</button>
+            </div>
+            <p class="last-performance muted"></p>
+          </div>
+          <span class="target"></span>
+        </div>
+        <div class="inputs">
+          <label>Charge (kg)<input class="weight" type="number" step="0.5" min="0" /></label>
+          <label>Séries<input class="sets" type="number" min="0" max="20" /></label>
+          <label>Reps<input class="reps" type="number" min="0" max="100" /></label>
+        </div>
+        <p class="volume muted"></p>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
