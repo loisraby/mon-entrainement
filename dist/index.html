@@ -20,6 +20,12 @@
         <button id="stats-button" class="history-button">
           Voir les statistiques
         </button>
+        <button id="analysis-button" class="history-button">
+          Analyser ma progression
+        </button>
+        <button id="programs-button" class="history-button">
+          Mes programmes
+        </button>
         <div class="backup-actions">
           <button id="export-button" class="backup-button">Sauvegarder mes données</button>
           <label class="backup-button import-label">
@@ -27,7 +33,7 @@
             <input id="import-input" type="file" accept="application/json" />
           </label>
         </div>
-        <p class="backup-hint muted">Garde ce fichier : il te permettra de retrouver tes séances sur un autre appareil.</p>
+        <p class="backup-hint muted">Garde ce fichier : il contient tes séances, programmes, notes et semaine légère pour un autre appareil.</p>
       </header>
 
       <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>
@@ -52,6 +58,21 @@
         <h2>Statistiques</h2>
         <div id="stats-content"></div>
       </section>
+      <section id="analysis-panel" class="history-panel hidden">
+        <h2>Analyse de progression</h2>
+        <div id="analysis-content"></div>
+      </section>
+      <section id="programs-panel" class="history-panel hidden">
+        <h2>Mes programmes</h2>
+        <p class="muted">Chaque programme garde ses séances. Tu peux conserver ton cycle hypertrophie avant d’en créer un autre.</p>
+        <div id="program-list" class="program-list"></div>
+        <div class="program-actions">
+          <button id="duplicate-program" class="backup-button">Copier le programme actif</button>
+          <button id="edit-program" class="backup-button">Modifier le programme actif</button>
+          <button id="deload-toggle" class="backup-button">Activer la semaine légère</button>
+        </div>
+        <section id="program-editor" class="program-editor hidden"></section>
+      </section>
     </main>
 
     <template id="exercise-template">
@@ -66,12 +87,18 @@
               <button class="rest-button" data-seconds="120">Repos 2 min</button>
             </div>
             <p class="last-performance muted"></p>
+            <p class="progression-advice"></p>
+            <details class="exercise-history">
+              <summary>Voir les derniers passages</summary>
+              <div class="exercise-history-list"></div>
+            </details>
           </div>
           <span class="target"></span>
         </div>
         <div class="series-area">
           <div class="series-list"></div>
           <div class="series-actions">
+            <button class="warmup-set" type="button">+ Échauffement</button>
             <button class="add-set" type="button">+ Ajouter une série</button>
             <button class="remove-set" type="button">− Retirer la dernière</button>
           </div>
@@ -92,6 +119,10 @@
           </div>
           <input class="exercise-comment" type="text" maxlength="140" placeholder="Note facultative : technique, douleur, machine…" />
         </div>
+        <details class="exercise-memory">
+          <summary>Note permanente : réglage / technique</summary>
+          <textarea class="exercise-memory-input" maxlength="240" placeholder="Ex. poulie à hauteur d’épaule, prise neutre plus confortable…"></textarea>
+        </details>
         <div class="exercise-actions">
           <button class="complete-exercise" type="button">Exercice terminé</button>
           <span class="exercise-status"></span>

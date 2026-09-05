@@ -46,6 +46,7 @@ h1 { margin: 0; font-size: clamp(1.7rem, 7vw, 2.3rem); }
 .workout-card { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 20px; }
 .workout-card h2 { margin: 0; font-size: 1.3rem; }
 .workout-meta { color: var(--green); font-weight: 700; }
+.deload-banner { border: 1px solid #b58a3a; border-radius: 10px; color: #f0c870; font-size: .85rem; line-height: 1.4; margin: 14px 0; padding: 10px; }
 
 .exercise-card { border-top: 1px solid var(--line); padding: 18px 0; }
 .exercise-heading { display: flex; justify-content: space-between; gap: 14px; }
@@ -54,12 +55,16 @@ h1 { margin: 0; font-size: clamp(1.7rem, 7vw, 2.3rem); }
 .target { color: var(--blue); font-weight: 800; white-space: nowrap; }
 
 .series-area { margin-top: 14px; }
-.series-row { align-items: end; display: grid; gap: 8px; grid-template-columns: 54px 1fr 1fr; margin-top: 8px; }
+.series-row { align-items: end; display: grid; gap: 8px; grid-template-columns: 54px 1fr 1fr 1fr; margin-top: 8px; }
+.warmup-toggle { align-items: center; display: flex; gap: 5px; grid-column: 2 / -1; }
+.warmup-toggle input { width: auto; }
+.warmup-row { border-left: 3px solid #d9a857; padding-left: 8px; }
+.warmup-row .series-number { color: #e1b96e; }
 .series-number { color: var(--blue); font-size: .82rem; font-weight: 800; padding-bottom: 11px; }
 .series-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
 .series-actions button { border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700; padding: 8px 10px; }
 label { color: var(--muted); display: grid; gap: 5px; font-size: .76rem; }
-input, select { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 10px; font: inherit; }
+input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 10px; font: inherit; }
 .volume { margin: 10px 0 0; font-size: .9rem; }
 .rest { color: var(--muted); text-align: center; padding: 26px 8px; }
 
@@ -117,7 +122,8 @@ input, select { width: 100%; border: 1px solid var(--line); border-radius: 10px;
 }
 
 .exercise-card.completed .variant-area,
-.exercise-card.completed .feeling-area { display: none; }
+.exercise-card.completed .feeling-area,
+.exercise-card.completed .exercise-memory { display: none; }
 
 .variant-area { margin-top: 14px; }
 .variant-button {
@@ -151,6 +157,24 @@ input, select { width: 100%; border: 1px solid var(--line); border-radius: 10px;
 }
 .feeling-buttons button.selected { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
 .exercise-comment { margin-top: 9px; }
+.progression-advice { color: #b8d2ff; font-size: .82rem; line-height: 1.4; margin: 8px 0 0; }
+.exercise-history { margin-top: 10px; }
+.exercise-history summary { color: var(--muted); cursor: pointer; font-size: .8rem; }
+.exercise-history-list { border-left: 2px solid var(--line); margin: 8px 0 0 3px; padding-left: 9px; }
+.exercise-history-list p { color: var(--muted); font-size: .78rem; line-height: 1.4; margin: 5px 0; }
+.exercise-memory { margin-top: 14px; }
+.exercise-memory summary { color: var(--muted); cursor: pointer; font-size: .8rem; }
+.exercise-memory textarea { min-height: 70px; margin-top: 9px; resize: vertical; width: 100%; }
+.session-feedback {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 18px;
+}
+.session-feedback h3 { margin: 0; font-size: 1rem; }
+.session-feedback > p { font-size: .83rem; margin: 6px 0 12px; }
+.session-feedback > span { color: var(--muted); font-size: .78rem; }
+.session-scores { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
+.session-comment { margin-top: 11px; }
 .last-feeling { color: var(--muted); font-size: .82rem; margin: 6px 0 0; }
 .history-button {
   margin-top: 14px;
@@ -226,6 +250,11 @@ input, select { width: 100%; border: 1px solid var(--line); border-radius: 10px;
   border-top: 1px solid var(--line);
   padding: 14px 0;
 }
+.analysis-entry { border-top: 1px solid var(--line); padding: 14px 0; }
+.analysis-entry p { font-size: .88rem; margin: 6px 0 0; }
+.trend-up { color: var(--green); }
+.trend-flat { color: #f1c75b; }
+.trend-down { color: #ff8585; }
 
 .history-entry p {
   margin: 5px 0 0;
@@ -236,6 +265,25 @@ input, select { width: 100%; border: 1px solid var(--line); border-radius: 10px;
   font-size: 0.88rem;
   margin-left: 10px;
 }
+.session-history { color: #d8e3df; font-size: .85rem; margin: 8px 0 4px !important; }
+
+.program-list { display: grid; gap: 9px; margin: 16px 0; }
+.program-entry { align-items: center; background: var(--surface-2); border-radius: 12px; display: flex; gap: 10px; justify-content: space-between; padding: 12px; }
+.program-entry p { font-size: .8rem; margin: 4px 0 0; }
+.program-entry-actions, .program-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.select-program { border: 1px solid var(--green); border-radius: 9px; background: transparent; color: var(--green); cursor: pointer; font: inherit; font-size: .82rem; font-weight: 800; padding: 8px 10px; }
+.select-program:disabled { border-color: var(--line); color: var(--muted); cursor: default; }
+.delete-program { border: 1px solid #d95c5c; border-radius: 9px; background: transparent; color: #ff9a9a; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 800; padding: 8px 10px; }
+.program-editor { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
+.program-editor h3 { margin: 0 0 14px; }
+.editor-days { display: flex; gap: 7px; margin: 16px 0; overflow-x: auto; }
+.editor-days button { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 800; padding: 8px 10px; }
+.editor-days button.active { background: var(--blue); border-color: var(--blue); color: white; }
+.editor-exercises { display: grid; gap: 10px; margin: 16px 0; }
+.editor-exercise { border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 9px; padding: 12px; }
+.editor-exercise .delete-program { justify-self: start; }
+.program-actions { margin-top: 14px; }
+.program-actions .finish-button { flex: 1 1 210px; }
 
 .delete-session {
   margin-top: 12px;
