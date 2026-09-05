@@ -3,6 +3,8 @@ const DRAFT_KEY = "seance_en_cours";
 const PROGRAMMES_KEY = "programmes_entrainement_v1";
 const PROGRAMME_ACTIF_KEY = "programme_actif_v1";
 const NOTES_EXERCICES_KEY = "notes_exercices_v1";
+const MESURES_KEY = "mesures_corporelles_v1";
+const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 let sessions = {};
 let programmeActif = null;
 let timerInterval = null;
@@ -76,6 +78,17 @@ function getHistorique() {
   return JSON.parse(localStorage.getItem("historique") || "[]");
 }
 
+function getMesures() {
+  try { return JSON.parse(localStorage.getItem(MESURES_KEY) || "[]"); } catch { return []; }
+}
+
+function rappelSauvegarde(historique = getHistorique()) {
+  const nombreLorsDerniereSauvegarde = Number(localStorage.getItem(BACKUP_SESSIONS_KEY));
+  return historique.length - nombreLorsDerniereSauvegarde >= 5
+    ? "\n\nPense à télécharger une sauvegarde : 5 nouvelles séances ont été enregistrées depuis la dernière."
+    : "";
+}
+
 function texteDernierePerformance(performance) {
   if (!performance) return "Aucune performance enregistrée.";
   const series = resumeSeries(performance);
@@ -99,10 +112,19 @@ function sauvegarderNoteExercice(nom, note) {
   localStorage.setItem(NOTES_EXERCICES_KEY, JSON.stringify(notes));
 }
 
-function conseilProgression(performance) {
+function hautDeFourchette(objectif) {
+  const resultat = String(objectif || "").match(/×\s*\d+\s*[–-]\s*(\d+)/);
+  return resultat ? Number(resultat[1]) : null;
+}
+
+function conseilProgression(performance, objectif) {
   if (!performance) return "Première séance : choisis une charge propre et note ton ressenti.";
   const serie = resumeSeries(performance);
   const dernierRir = performance.seriesDetail?.filter((item) => !item.echauffement).at(-1)?.rir ?? performance.rir;
+  const haut = hautDeFourchette(objectif);
+  const seriesTravail = performance.seriesDetail?.filter((item) => !item.echauffement) || [];
+  const hautAtteint = haut && seriesTravail.length && seriesTravail.every((item) => Number(item.repetitions) >= haut);
+  if (hautAtteint && Number(dernierRir) >= 2) return `Objectif atteint : ${serie}. Tu peux tester le plus petit incrément de charge disponible, puis repartir vers le bas de la fourchette.`;
   if (Number(dernierRir) <= 1 && dernierRir !== null && dernierRir !== "" && dernierRir !== undefined) return `Dernière fois : ${serie}. Dernière série à RIR ${dernierRir} : garde la charge et vise une exécution aussi propre avant de chercher à progresser.`;
   if (Number(dernierRir) >= 3) return `Dernière fois : ${serie}. Dernière série à RIR ${dernierRir} : tu as de la marge, ajoute 1 rep par série ou augmente légèrement la charge.`;
   if (performance.ressenti === "facile") return `Dernière fois : ${serie}. Tu peux viser +1 rep par série, ou augmenter légèrement la charge si tu étais déjà au haut de ta fourchette.`;
@@ -156,6 +178,7 @@ function sauvegarderSeanceEnCours(day, session) {
       programmeNom: card.dataset.programmeName,
       ...donnees,
       termine: card.classList.contains("completed"),
+      passe: card.classList.contains("skipped"),
       ressenti: card.querySelector(".feeling-area").dataset.ressenti || null,
       commentaire: card.querySelector(".exercise-comment").value.trim(),
     };
@@ -174,6 +197,10 @@ function sauvegarderSeanceEnCours(day, session) {
     commentaireSeance: workout.querySelector(".session-comment")?.value.trim() || "",
   };
   localStorage.setItem(DRAFT_KEY, JSON.stringify(brouillon));
+  const statut = workout.querySelector("#session-save-status");
+  if (statut) {
+    statut.textContent = `Sauvegardé sur cet appareil à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  }
 }
 
 function afficherSeanceEnCours() {
@@ -224,6 +251,7 @@ function exporterHistorique() {
   lien.download = `sauvegarde-entrainement-${dateKey(new Date())}.json`;
   lien.click();
   URL.revokeObjectURL(lien.href);
+  localStorage.setItem(BACKUP_SESSIONS_KEY, String(getHistorique().length));
 }
 
 function importerHistorique(event) {
@@ -239,6 +267,7 @@ function importerHistorique(event) {
       const sauvegardeComplete = Array.isArray(contenu.programmes);
       if (!confirm(`Restaurer ${historique.length} séance(s)${sauvegardeComplete ? " et tous les programmes" : ""} ? Les données actuelles correspondantes de cet appareil seront remplacées.`)) return;
       localStorage.setItem("historique", JSON.stringify(historique));
+      localStorage.setItem(BACKUP_SESSIONS_KEY, String(historique.length));
       if (sauvegardeComplete) {
         localStorage.setItem(PROGRAMMES_KEY, JSON.stringify(contenu.programmes));
         if (typeof contenu.programmeActif === "string") localStorage.setItem(PROGRAMME_ACTIF_KEY, contenu.programmeActif);
@@ -262,6 +291,15 @@ function importerHistorique(event) {
 
 function formatKg(value) {
   return Math.round(value).toLocaleString("fr-FR");
+}
+
+function formatDuree(secondes) {
+  const total = Math.max(0, Math.round(Number(secondes) || 0));
+  const heures = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (heures) return `${heures} h ${minutes.toString().padStart(2, "0")}`;
+  if (minutes) return `${minutes} min`;
+  return `${total} s`;
 }
 
 function dateKey(date) {
@@ -303,7 +341,7 @@ function lireExercice(card) {
   const repetitions = seriesTravail.length
     ? Math.round((seriesTravail.reduce((total, serie) => total + serie.repetitions, 0) / seriesTravail.length) * 10) / 10
     : 0;
-  return { charge, series: seriesTravail.length, repetitions, seriesDetail, volume };
+  return { charge, series: seriesTravail.length, repetitions, seriesDetail, volume: card.classList.contains("skipped") ? 0 : volume, passe: card.classList.contains("skipped") };
 }
 
 function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir = "") {
@@ -328,9 +366,10 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
 
 function updateSessionProgress() {
   const cards = [...workout.querySelectorAll(".exercise-card")];
-  const completed = cards.filter((card) => card.classList.contains("completed")).length;
+  const completed = cards.filter((card) => card.classList.contains("completed") || card.classList.contains("skipped")).length;
+  const passes = cards.filter((card) => card.classList.contains("skipped")).length;
   const progress = workout.querySelector("#session-progress");
-  if (progress) progress.textContent = `${completed} / ${cards.length} exercices terminés`;
+  if (progress) progress.textContent = `${completed} / ${cards.length} exercices faits${passes ? ` · ${passes} passé${passes > 1 ? "s" : ""}` : ""}`;
   return { completed, total: cards.length };
 }
 
@@ -356,6 +395,7 @@ function afficherAnalyse() {
   const performances = new Map();
   getHistorique().forEach((seance) => {
     (seance.exercices || []).forEach((exercice, ordre) => {
+      if (exercice.passe) return;
       const volume = Number(exercice.volume) || (exercice.seriesDetail || []).reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
       const rir = exercice.seriesDetail?.filter((serie) => !serie.echauffement).at(-1)?.rir ?? exercice.rir ?? null;
       if (!performances.has(exercice.nom)) performances.set(exercice.nom, []);
@@ -372,20 +412,40 @@ function afficherAnalyse() {
       const recent = valeursComparables.slice(-3).reduce((total, item) => total + item.volume, 0) / 3;
       const precedent = valeursComparables.slice(-6, -3).reduce((total, item) => total + item.volume, 0) / 3;
       const evolution = precedent ? ((recent - precedent) / precedent) * 100 : 0;
-      const derniere = valeurs.at(-1);
+      const passagesRecents = valeursComparables.slice(-3);
+      const moyenneRecente = (cle) => {
+        const valeursNumeriques = passagesRecents
+          .map((item) => item[cle])
+          .filter((valeur) => valeur !== null && valeur !== undefined && valeur !== "")
+          .map(Number)
+          .filter(Number.isFinite);
+        return valeursNumeriques.length
+          ? valeursNumeriques.reduce((total, valeur) => total + valeur, 0) / valeursNumeriques.length
+          : null;
+      };
+      const energieRecente = moyenneRecente("energie");
+      const sommeilRecent = moyenneRecente("sommeil");
+      const rirRecent = moyenneRecente("rir");
+      const derniere = valeursComparables.at(-1);
       const finDeSeance = derniere.ordre >= derniere.total / 2;
-      const classe = evolution > 3 ? "trend-up" : evolution < -3 ? "trend-down" : "trend-flat";
-      const etat = evolution > 3 ? "Progression visible" : evolution < -3 ? "Baisse à surveiller" : "Stable : possible stagnation";
+      const recuperationBasse = (energieRecente !== null && energieRecente <= 2.5)
+        || (sommeilRecent !== null && sommeilRecent <= 2.5);
+      const effortEleve = rirRecent !== null && rirRecent <= 1.5;
+      const fatiguePossible = evolution <= 3 && recuperationBasse && effortEleve;
+      const classe = fatiguePossible ? "trend-alert" : evolution > 3 ? "trend-up" : evolution < -3 ? "trend-down" : "trend-flat";
+      const etat = fatiguePossible
+        ? "Stagnation avec fatigue possible"
+        : evolution > 3 ? "Progression visible" : evolution < -3 ? "Baisse à surveiller" : "Stable : possible stagnation";
       const contextes = [];
       if (finDeSeance) contextes.push("Exercice de fin de séance : la fatigue peut expliquer une partie du résultat.");
       if (derniere.rir !== null && derniere.rir !== undefined && derniere.rir <= 1) contextes.push(`Dernière série proche de l’échec (RIR ${derniere.rir}).`);
       if (derniere.energie && derniere.energie <= 2) contextes.push(`Énergie basse (${derniere.energie}/5).`);
       if (derniere.sommeil && derniere.sommeil <= 2) contextes.push(`Sommeil bas (${derniere.sommeil}/5).`);
-      if (derniere.semaineLegere) contextes.push("Dernier passage en semaine légère : non utilisé pour calculer la tendance.");
+      if (fatiguePossible) contextes.push(`Sur les 3 derniers passages : ${energieRecente !== null ? `énergie ${energieRecente.toFixed(1).replace(".", ",")}/5` : ""}${energieRecente !== null && sommeilRecent !== null ? " · " : ""}${sommeilRecent !== null ? `sommeil ${sommeilRecent.toFixed(1).replace(".", ",")}/5` : ""}${(energieRecente !== null || sommeilRecent !== null) && rirRecent !== null ? " · " : ""}${rirRecent !== null ? `RIR ${rirRecent.toFixed(1).replace(".", ",")}` : ""}.`);
       const contexte = contextes.length ? ` ${contextes.join(" ")}` : "";
       return `<article class="analysis-entry"><strong>${nom}</strong><p class="${classe}">${etat} (${evolution > 0 ? "+" : ""}${Math.round(evolution)} % sur les 3 derniers passages).</p><p class="muted">${groupe}.${contexte}</p></article>`;
     }).join("");
-    analysisContent.innerHTML = `<p class="muted">Cette analyse compare des tendances, pas une séance isolée.</p>${lignes}`;
+    analysisContent.innerHTML = `<p class="muted">Cette analyse compare des tendances, pas une séance isolée. Une alerte de fatigue n’apparaît que si la progression stagne et que récupération basse + effort élevé se répètent.</p>${lignes}`;
   }
   analysisPanel.classList.remove("hidden");
   analysisPanel.scrollIntoView({ behavior: "smooth" });
@@ -407,25 +467,52 @@ function afficherHistorique(forceOpen = false) {
   if (historique.length === 0) {
     historyList.innerHTML = "<p class='muted'>Aucune séance sauvegardée pour le moment.</p>";
   } else {
+    historyList.insertAdjacentHTML("beforeend", "<input id='history-search' class='history-search' type='search' placeholder='Rechercher une séance ou un exercice' aria-label='Rechercher dans l’historique' />");
+    const programmesHistorique = [...new Map(historique.map((seance) => [
+      encodeURIComponent(seance.programmeId || seance.programme || "sans-programme"),
+      seance.programme || "Anciennes séances",
+    ])).entries()];
+    if (programmesHistorique.length > 1) {
+      historyList.insertAdjacentHTML("beforeend", `
+        <label class="history-filter">Programme
+          <select id="history-program-filter">
+            <option value="tous">Tous les programmes</option>
+            ${programmesHistorique.map(([id, nom]) => `<option value="${id}">${nom}</option>`).join("")}
+          </select>
+        </label>
+      `);
+    }
     [...historique].reverse().forEach((seance) => {
       const date = new Date(seance.date).toLocaleString("fr-FR");
       const details = (seance.exercices || []).map((exercice) => `
-        <p class="history-exercise">${exercice.nom} : ${exercice.seriesDetail?.length ? exercice.seriesDetail.map((serie) => `${serie.echauffement ? "Échauff. " : ""}${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null ? ` (RIR ${serie.rir})` : ""}`).join(" · ") : `${exercice.series} × ${exercice.repetitions} à ${exercice.charge} kg`}${exercice.rir !== undefined && exercice.rir !== null ? ` · RIR ${exercice.rir}` : ""}${exercice.ressenti ? ` · ${RESSENTIS[exercice.ressenti]}` : ""}${exercice.commentaire ? ` — ${exercice.commentaire}` : ""}</p>
+        <p class="history-exercise">${exercice.nom}${exercice.programmeNom && exercice.programmeNom !== exercice.nom ? ` <span class="variant-history">(variante de ${exercice.programmeNom})</span>` : ""} : ${exercice.passe ? "Exercice passé" : exercice.seriesDetail?.length ? exercice.seriesDetail.map((serie) => `${serie.echauffement ? "Échauff. " : ""}${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null ? ` (RIR ${serie.rir})` : ""}`).join(" · ") : `${exercice.series} × ${exercice.repetitions} à ${exercice.charge} kg`}${exercice.rir !== undefined && exercice.rir !== null ? ` · RIR ${exercice.rir}` : ""}${exercice.ressenti ? ` · ${RESSENTIS[exercice.ressenti]}` : ""}${exercice.commentaire ? ` — ${exercice.commentaire}` : ""}</p>
       `).join("") || "<p class='muted'>Détails non enregistrés pour cette ancienne séance.</p>";
       const bilan = seance.ressentiSeance || seance.energie || seance.sommeil || seance.commentaireSeance
         ? `<p class="session-history">Bilan : ${seance.ressentiSeance ? RESSENTIS[seance.ressentiSeance] : "non renseigné"}${seance.energie ? ` · énergie ${seance.energie}/5` : ""}${seance.sommeil ? ` · sommeil ${seance.sommeil}/5` : ""}${seance.commentaireSeance ? ` — ${seance.commentaireSeance}` : ""}</p>`
         : "";
       const deleteId = seance.id || seance.date;
       historyList.insertAdjacentHTML("beforeend", `
-        <article class="history-entry">
+        <article class="history-entry" data-programme="${encodeURIComponent(seance.programmeId || seance.programme || "sans-programme")}" data-recherche="${`${seance.nom || ""} ${seance.programme || ""} ${(seance.exercices || []).map((exercice) => exercice.nom).join(" ")}`.toLocaleLowerCase("fr-FR")}">
           <strong>${seance.nom}</strong>
-          <p class="muted">${date} · ${seance.programme ? `${seance.programme} · ` : ""}${seance.semaineLegere ? "Semaine légère · " : ""}Volume : ${formatKg(seance.volume)} kg</p>
+          <p class="muted">${date} · ${seance.programme ? `${seance.programme} · ` : ""}${seance.semaineLegere ? "Semaine légère · " : ""}Volume : ${formatKg(seance.volume)} kg${seance.dureeSecondes ? ` · ${formatDuree(seance.dureeSecondes)}` : ""}</p>
           ${bilan}
           ${details}
           <button class="delete-session" data-id="${deleteId}">Supprimer</button>
         </article>
       `);
     });
+
+    const appliquerFiltresHistorique = () => {
+      const programmeChoisi = historyList.querySelector("#history-program-filter")?.value || "tous";
+      const recherche = historyList.querySelector("#history-search").value.trim().toLocaleLowerCase("fr-FR");
+      historyList.querySelectorAll(".history-entry").forEach((entree) => {
+        const mauvaisProgramme = programmeChoisi !== "tous" && entree.dataset.programme !== programmeChoisi;
+        const introuvable = recherche && !entree.dataset.recherche.includes(recherche);
+        entree.hidden = mauvaisProgramme || introuvable;
+      });
+    };
+    historyList.querySelector("#history-program-filter")?.addEventListener("change", appliquerFiltresHistorique);
+    historyList.querySelector("#history-search").addEventListener("input", appliquerFiltresHistorique);
 
     historyList.querySelectorAll(".delete-session").forEach((button) => {
       button.addEventListener("click", () => {
@@ -531,8 +618,25 @@ function afficherStatistiques() {
     const volumesParJour = new Map();
     const volumesParSemaine = new Map();
     const meilleuresCharges = new Map();
+    const groupesCetteSemaine = new Map();
+    const groupesQuatreSemaines = new Map();
+    const debutQuatreSemaines = new Date(startOfWeek);
+    debutQuatreSemaines.setDate(debutQuatreSemaines.getDate() - 21);
     let volumeTotal = 0;
     let volumeCetteSemaine = 0;
+    const seancesCetteSemaine = historique.filter((seance) => new Date(seance.date) >= startOfWeek);
+    const dureesEnregistrees = historique
+      .map((seance) => Number(seance.dureeSecondes))
+      .filter((duree) => Number.isFinite(duree) && duree > 0);
+    const dureeMoyenne = dureesEnregistrees.length
+      ? dureesEnregistrees.reduce((total, duree) => total + duree, 0) / dureesEnregistrees.length
+      : null;
+    const joursEntrainesCetteSemaine = [...new Set(seancesCetteSemaine.map((seance) => {
+      const indexJour = (new Date(seance.date).getDay() + 6) % 7;
+      return days[indexJour];
+    }))];
+    const seancesPrevuesJusquaAujourdhui = Object.keys(sessions)
+      .filter((jour) => days.indexOf(jour) <= todayIndex).length;
 
     historique.forEach((seance) => {
       const date = new Date(seance.date);
@@ -545,9 +649,21 @@ function afficherStatistiques() {
       if (date >= startOfWeek) volumeCetteSemaine += volume;
 
       (seance.exercices || []).forEach((exercice) => {
+        if (exercice.passe) return;
         const meilleure = meilleuresCharges.get(exercice.nom);
         if (!meilleure || exercice.charge > meilleure.charge) {
           meilleuresCharges.set(exercice.nom, exercice);
+        }
+        if (date >= debutQuatreSemaines) {
+          const groupe = groupeMusculaire(exercice.nom);
+          const volumeExercice = Number(exercice.volume) || (exercice.seriesDetail || []).filter((serie) => !serie.echauffement).reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
+          const seriesExercice = exercice.seriesDetail?.filter((serie) => !serie.echauffement).length || Number(exercice.series) || 0;
+          const recent = groupesQuatreSemaines.get(groupe) || { volume: 0, series: 0 };
+          groupesQuatreSemaines.set(groupe, { volume: recent.volume + volumeExercice, series: recent.series + seriesExercice });
+          if (date >= startOfWeek) {
+            const actuel = groupesCetteSemaine.get(groupe) || { volume: 0, series: 0 };
+            groupesCetteSemaine.set(groupe, { volume: actuel.volume + volumeExercice, series: actuel.series + seriesExercice });
+          }
         }
       });
     });
@@ -561,12 +677,53 @@ function afficherStatistiques() {
       .sort()
       .map((nom) => `<option value="${nom}">${nom}</option>`)
       .join("");
+    const groupes = [...groupesCetteSemaine.entries()].sort((a, b) => b[1].series - a[1].series)
+      .map(([groupe, donnees]) => `<li>${groupe}<strong>${donnees.series} séries · ${formatKg(donnees.volume)} kg</strong></li>`)
+      .join("");
+    const equilibre = [...groupesQuatreSemaines.entries()].sort((a, b) => b[1].series - a[1].series)
+      .map(([groupe, donnees]) => `<li>${groupe}<strong>${donnees.series} séries</strong></li>`)
+      .join("");
+    const mesures = getMesures();
+    const derniereMesure = mesures.at(-1);
+    const mesuresRecentes = mesures.slice(-5).reverse().map((mesure) => `<li>${new Date(mesure.date).toLocaleDateString("fr-FR")}<strong>${mesure.poids ? `${mesure.poids} kg` : "—"}${mesure.taille ? ` · taille ${mesure.taille} cm` : ""}</strong></li>`).join("");
+    const seancesRecentes = historique.slice(-5);
+    const valeursRenseignees = (valeurs) => valeurs
+      .filter((valeur) => valeur !== null && valeur !== undefined && valeur !== "")
+      .map(Number)
+      .filter(Number.isFinite);
+    const moyenne = (valeurs) => valeurs.length
+      ? valeurs.reduce((total, valeur) => total + valeur, 0) / valeurs.length
+      : null;
+    const energieMoyenne = moyenne(valeursRenseignees(seancesRecentes.map((seance) => seance.energie)));
+    const sommeilMoyen = moyenne(valeursRenseignees(seancesRecentes.map((seance) => seance.sommeil)));
+    const rirMoyen = moyenne(valeursRenseignees(seancesRecentes.flatMap((seance) =>
+      (seance.exercices || []).filter((exercice) => !exercice.passe).flatMap((exercice) =>
+        (exercice.seriesDetail || [])
+          .filter((serie) => !serie.echauffement)
+          .map((serie) => serie.rir)
+      )
+    )));
+    const formatMoyenne = (valeur) => valeur === null ? "—" : valeur.toFixed(1).replace(".", ",");
+    const donneesRecuperation = [energieMoyenne, sommeilMoyen, rirMoyen].filter((valeur) => valeur !== null).length;
+    let messageRecuperation = "Renseigne énergie, sommeil et RIR sur quelques séances pour voir une tendance utile.";
+    if (donneesRecuperation >= 2 && (energieMoyenne !== null && energieMoyenne <= 2.5 || sommeilMoyen !== null && sommeilMoyen <= 2.5)) {
+      messageRecuperation = "Récupération basse sur les dernières séances : adapte l’effort si besoin et surveille l’évolution.";
+    } else if (rirMoyen !== null && rirMoyen <= 1.2) {
+      messageRecuperation = "Effort récent très élevé. Si l’énergie ou le sommeil baissent aussi, surveille ta récupération.";
+    } else if (donneesRecuperation >= 2) {
+      messageRecuperation = "Récupération récente plutôt stable d’après les informations enregistrées.";
+    }
 
     statsContent.innerHTML = `
       <div class="stats-grid">
         <article class="stat-card"><span>Séances</span><strong>${historique.length}</strong></article>
         <article class="stat-card"><span>Volume total</span><strong>${formatKg(volumeTotal)} kg</strong></article>
         <article class="stat-card"><span>Cette semaine</span><strong>${formatKg(volumeCetteSemaine)} kg</strong></article>
+      </div>
+      <h3>Ma semaine</h3>
+      <div class="week-recap">
+        <strong>${seancesCetteSemaine.length} séance${seancesCetteSemaine.length > 1 ? "s" : ""} enregistrée${seancesCetteSemaine.length > 1 ? "s" : ""}</strong>
+        <p class="muted">Jours entraînés : ${joursEntrainesCetteSemaine.length ? joursEntrainesCetteSemaine.join(" · ") : "aucun pour le moment"}. Ton programme prévoit ${seancesPrevuesJusquaAujourdhui} séance${seancesPrevuesJusquaAujourdhui > 1 ? "s" : ""} jusqu’à aujourd’hui.${dureeMoyenne ? ` Durée moyenne : ${formatDuree(dureeMoyenne)}.` : ""}</p>
       </div>
       <h3>Activité ${now.getFullYear()}</h3>
       <div class="activity-calendar">${creerCalendrierActivite(volumesParJour, now.getFullYear())}</div>
@@ -575,6 +732,21 @@ function afficherStatistiques() {
       <div class="weekly-chart">${creerGraphiqueHebdomadaire(volumesParSemaine)}</div>
       <h3>Meilleures charges</h3>
       <ul class="records-list">${records || "<li>Aucune charge enregistrée.</li>"}</ul>
+      <h3>Groupes musculaires — cette semaine</h3>
+      <ul class="records-list">${groupes || "<li>Aucune séance cette semaine.</li>"}</ul>
+      <h3>Équilibre musculaire — 4 semaines</h3>
+      <ul class="records-list">${equilibre || "<li>Enregistre quelques séances pour voir la répartition.</li>"}</ul>
+      <h3>Récupération récente</h3>
+      <div class="stats-grid recovery-grid">
+        <article class="stat-card"><span>Énergie moyenne</span><strong>${formatMoyenne(energieMoyenne)}${energieMoyenne === null ? "" : "/5"}</strong></article>
+        <article class="stat-card"><span>Sommeil moyen</span><strong>${formatMoyenne(sommeilMoyen)}${sommeilMoyen === null ? "" : "/5"}</strong></article>
+        <article class="stat-card"><span>RIR moyen</span><strong>${formatMoyenne(rirMoyen)}</strong></article>
+      </div>
+      <p class="recovery-note">Sur les ${seancesRecentes.length} dernières séances : ${messageRecuperation}</p>
+      <h3>Poids et mensurations</h3>
+      <button id="add-measurement" class="backup-button">Ajouter une mesure</button>
+      <p class="muted">Dernière mesure : ${derniereMesure ? `${derniereMesure.poids || "—"} kg${derniereMesure.taille ? ` · taille ${derniereMesure.taille} cm` : ""}` : "aucune"}</p>
+      <ul class="records-list">${mesuresRecentes || "<li>Aucune mesure enregistrée.</li>"}</ul>
       <h3>Progression par exercice</h3>
       <select id="exercise-select" class="exercise-select">${optionsExercices}</select>
       <div id="exercise-progress"></div>
@@ -585,6 +757,15 @@ function afficherStatistiques() {
     const mettreAJourProgression = () =>
       afficherProgressionExercice(selectExercice.value, historique, progression);
     selectExercice.addEventListener("change", mettreAJourProgression);
+    statsContent.querySelector("#add-measurement").addEventListener("click", () => {
+      const poids = Number(prompt("Poids du jour en kg (facultatif) :", derniereMesure?.poids || ""));
+      const taille = Number(prompt("Tour de taille en cm (facultatif) :", derniereMesure?.taille || ""));
+      if (!poids && !taille) return;
+      mesures.push({ date: new Date().toISOString(), poids: poids || null, taille: taille || null });
+      localStorage.setItem(MESURES_KEY, JSON.stringify(mesures));
+      afficherStatistiques();
+      afficherStatistiques();
+    });
     mettreAJourProgression();
   }
   statsPanel.classList.remove("hidden");
@@ -640,6 +821,11 @@ function afficherProgrammes() {
   programEditor.classList.add("hidden");
   document.querySelector("#deload-toggle").textContent = programmeActif?.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
   programList.innerHTML = "";
+  const dernierDeload = [...getHistorique()].reverse().find((seance) => seance.semaineLegere && seance.programmeId === programmeActif?.id);
+  const texteDeload = dernierDeload
+    ? `Dernière semaine légère enregistrée : ${new Date(dernierDeload.date).toLocaleDateString("fr-FR")}.`
+    : "Aucune semaine légère enregistrée pour ce programme. À envisager si fatigue et stagnation s’installent, pas juste par automatisme.";
+  programList.insertAdjacentHTML("beforeend", `<p class="deload-reminder">${texteDeload}</p>`);
   getProgrammes().forEach((programme) => {
     const ligne = document.createElement("article");
     ligne.className = "program-entry";
@@ -806,6 +992,30 @@ function afficherEditeurProgramme() {
         creerChamp("Note", exercice[3], "edit-exercise-note"),
         creerChamp("Repos (s)", exercice[4] ?? 90, "edit-exercise-rest", "number"),
       );
+      const ordre = document.createElement("div");
+      ordre.className = "editor-exercise-actions";
+      const monter = document.createElement("button");
+      monter.type = "button";
+      monter.className = "backup-button";
+      monter.textContent = "↑ Monter";
+      monter.disabled = index === 0;
+      monter.addEventListener("click", () => {
+        sauvegarderModificationsEditeur();
+        [session.exercises[index - 1], session.exercises[index]] = [session.exercises[index], session.exercises[index - 1]];
+        sauvegarderProgrammeActif();
+        afficherEditeurProgramme();
+      });
+      const descendre = document.createElement("button");
+      descendre.type = "button";
+      descendre.className = "backup-button";
+      descendre.textContent = "↓ Descendre";
+      descendre.disabled = index === session.exercises.length - 1;
+      descendre.addEventListener("click", () => {
+        sauvegarderModificationsEditeur();
+        [session.exercises[index], session.exercises[index + 1]] = [session.exercises[index + 1], session.exercises[index]];
+        sauvegarderProgrammeActif();
+        afficherEditeurProgramme();
+      });
       const supprimer = document.createElement("button");
       supprimer.type = "button";
       supprimer.className = "delete-program";
@@ -816,7 +1026,8 @@ function afficherEditeurProgramme() {
         sauvegarderProgrammeActif();
         afficherEditeurProgramme();
       });
-      ligne.append(supprimer);
+      ordre.append(monter, descendre, supprimer);
+      ligne.append(ordre);
       exercices.append(ligne);
     });
     const ajouterExercice = document.createElement("button");
@@ -864,15 +1075,35 @@ async function chargerProgramme() {
 function trouverDernierePerformance(nomExercice) {
   const historique = getHistorique();
   for (let index = historique.length - 1; index >= 0; index--) {
-    const performance = (historique[index].exercices || []).find((exercice) => exercice.nom === nomExercice);
+    const performance = (historique[index].exercices || []).find((exercice) => exercice.nom === nomExercice && !exercice.passe);
     if (performance) return performance;
   }
   return null;
 }
 
+function trouverDerniereSeance(jour) {
+  const historique = getHistorique();
+  for (let index = historique.length - 1; index >= 0; index--) {
+    const seance = historique[index];
+    const memeProgramme = seance.programmeId
+      ? seance.programmeId === programmeActif?.id
+      : seance.programme === programmeActif?.nom;
+    if (seance.jour === jour && memeProgramme) return seance;
+  }
+  return null;
+}
+
+function texteDerniereSeance(seance) {
+  if (!seance) return "";
+  const date = new Date(seance.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  const ressenti = seance.ressentiSeance ? ` · ${RESSENTIS[seance.ressentiSeance]}` : "";
+  const duree = seance.dureeSecondes ? ` · ${formatDuree(seance.dureeSecondes)}` : "";
+  return `Dernière séance : ${date} · ${formatKg(seance.volume)} kg${duree}${ressenti}`;
+}
+
 function derniersPassages(nomExercice) {
   return getHistorique()
-    .flatMap((seance) => (seance.exercices || []).filter((exercice) => exercice.nom === nomExercice).map((exercice) => ({ exercice, date: new Date(seance.date) })))
+    .flatMap((seance) => (seance.exercices || []).filter((exercice) => exercice.nom === nomExercice && !exercice.passe).map((exercice) => ({ exercice, date: new Date(seance.date) })))
     .slice(-5)
     .reverse();
 }
@@ -926,7 +1157,8 @@ function renderDay(day, brouillon = null) {
   }
 
   const semaineLegere = Boolean(programmeActif?.semaineLegere);
-  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${semaineLegere ? "<p class='deload-banner'>Semaine légère : environ −10 % de charge et une série de moins. Ajuste librement selon ta forme.</p>" : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p>`);
+  const derniereSeance = trouverDerniereSeance(day);
+  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? "<p class='deload-banner'>Semaine légère : environ −10 % de charge et une série de moins. Ajuste librement selon ta forme.</p>" : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
   const brouillonTrouve = brouillon || getSeanceEnCours();
   const seanceEnCours = brouillonTrouve && (!brouillonTrouve.programmeId || brouillonTrouve.programmeId === programmeActif?.id)
     ? brouillonTrouve
@@ -948,7 +1180,7 @@ function renderDay(day, brouillon = null) {
     card.querySelector(".exercise-name").textContent = nomEffectif;
     const dernierePerformance = trouverDernierePerformance(nomEffectif);
     card.querySelector(".last-performance").textContent = texteDernierePerformance(dernierePerformance);
-    card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance);
+    card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance, target);
     afficherDerniersPassages(nomEffectif, card.querySelector(".exercise-history-list"));
     const notePermanente = card.querySelector(".exercise-memory-input");
     notePermanente.value = getNotesExercices()[nomEffectif] || "";
@@ -989,7 +1221,7 @@ function renderDay(day, brouillon = null) {
       exerciseCard.querySelector(".exercise-name").textContent = nouveauNom;
       const derniere = trouverDernierePerformance(nouveauNom);
       exerciseCard.querySelector(".last-performance").textContent = texteDernierePerformance(derniere);
-      exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere);
+      exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere, target);
       afficherDerniersPassages(nouveauNom, exerciseCard.querySelector(".exercise-history-list"));
       notePermanente.value = getNotesExercices()[nouveauNom] || "";
       sauvegarderSeanceEnCours(day, session);
@@ -1007,6 +1239,11 @@ function renderDay(day, brouillon = null) {
       card.querySelector(".exercise-card").classList.add("completed");
       card.querySelector(".complete-exercise").textContent = "Modifier l’exercice";
       card.querySelector(".exercise-status").textContent = "Terminé ✓";
+    }
+    if (ancienExercice?.passe) {
+      card.querySelector(".exercise-card").classList.add("skipped");
+      card.querySelector(".skip-exercise").textContent = "Faire l’exercice";
+      card.querySelector(".exercise-status").textContent = "Passé";
     }
     configurerRessenti(
       card.querySelector(".feeling-area"),
@@ -1038,12 +1275,27 @@ function renderDay(day, brouillon = null) {
     card.querySelectorAll(".rest-button").forEach((button) => button.addEventListener("click", () => demarrerMinuteur(Number(button.dataset.seconds))));
     card.querySelector(".complete-exercise").addEventListener("click", (event) => {
       const exerciseCard = event.currentTarget.closest(".exercise-card");
+      exerciseCard.classList.remove("skipped");
+      exerciseCard.querySelector(".skip-exercise").textContent = "Passer";
       const completed = exerciseCard.classList.toggle("completed");
       event.currentTarget.textContent = completed ? "Modifier l’exercice" : "Exercice terminé";
       exerciseCard.querySelector(".exercise-status").textContent = completed ? "Terminé ✓" : "";
       updateSessionProgress();
       sauvegarderSeanceEnCours(day, session);
       if (completed) demarrerMinuteur(restSeconds);
+    });
+    card.querySelector(".skip-exercise").addEventListener("click", (event) => {
+      const exerciseCard = event.currentTarget.closest(".exercise-card");
+      const passe = exerciseCard.classList.toggle("skipped");
+      if (passe) {
+        exerciseCard.classList.remove("completed");
+        exerciseCard.querySelector(".complete-exercise").textContent = "Exercice terminé";
+      }
+      event.currentTarget.textContent = passe ? "Faire l’exercice" : "Passer";
+      exerciseCard.querySelector(".exercise-status").textContent = passe ? "Passé" : "";
+      updateVolume(exerciseCard);
+      updateSessionProgress();
+      sauvegarderSeanceEnCours(day, session);
     });
     workout.append(card);
   });
@@ -1085,7 +1337,13 @@ function renderDay(day, brouillon = null) {
   workout.insertAdjacentHTML("beforeend", "<button id='finish-button' class='finish-button'>Terminer la séance</button>");
   workout.querySelector("#finish-button").addEventListener("click", () => {
     const progress = updateSessionProgress();
-    if (!confirm(`Enregistrer cette séance ? ${progress.completed} / ${progress.total} exercices sont marqués comme terminés.`)) return;
+    const exercicesNonTermines = [...workout.querySelectorAll(".exercise-card")]
+      .filter((card) => !card.classList.contains("completed"))
+      .map((card) => card.querySelector(".exercise-name").textContent);
+    const rappel = exercicesNonTermines.length
+      ? `\n\nPas encore terminés :\n• ${exercicesNonTermines.join("\n• ")}`
+      : "";
+    if (!confirm(`Enregistrer cette séance ? ${progress.completed} / ${progress.total} exercices sont marqués comme terminés.${rappel}`)) return;
     const volume = updateTotalVolume();
     const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
       const donnees = lireExercice(card);
@@ -1093,11 +1351,16 @@ function renderDay(day, brouillon = null) {
         nom: card.querySelector(".exercise-name").textContent,
         programmeNom: card.dataset.programmeName,
         ...donnees,
+        passe: card.classList.contains("skipped"),
         ressenti: card.querySelector(".feeling-area").dataset.ressenti || null,
         commentaire: card.querySelector(".exercise-comment").value.trim(),
       };
     });
     const historique = getHistorique();
+    const dureeSecondes = Math.max(
+      0,
+      Math.round((Date.now() - new Date(seanceEnCours?.commenceeLe || Date.now()).getTime()) / 1000),
+    );
     const seanceTerminee = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -1107,6 +1370,7 @@ function renderDay(day, brouillon = null) {
       jour: day,
       nom: session.title,
       volume,
+      dureeSecondes,
       exercices,
       ressentiSeance: bilan.dataset.ressenti || null,
       energie: Number(bilan.querySelector(".session-energy").value) || null,
@@ -1120,7 +1384,7 @@ function renderDay(day, brouillon = null) {
     const finishButton = workout.querySelector("#finish-button");
     finishButton.disabled = true;
     finishButton.textContent = "Séance enregistrée ✓";
-    alert(`Séance enregistrée !\n${seanceTerminee.nom}\nVolume total : ${formatKg(volume)} kg\nSéances sauvegardées : ${historique.length}`);
+    alert(`Séance enregistrée !\n${seanceTerminee.nom}\nVolume total : ${formatKg(volume)} kg\nDurée : ${formatDuree(dureeSecondes)}\nSéances sauvegardées : ${historique.length}${rappelSauvegarde(historique)}`);
   });
 }
 
