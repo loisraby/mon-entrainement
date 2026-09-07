@@ -34,6 +34,7 @@
           </label>
         </div>
         <p class="backup-hint muted">Garde ce fichier : il contient tes séances, programmes, notes et semaine légère pour un autre appareil.</p>
+        <p id="backup-status" class="backup-hint muted">Aucune sauvegarde téléchargée sur cet appareil.</p>
       </header>
 
       <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>
@@ -68,6 +69,7 @@
         <div id="program-list" class="program-list"></div>
         <div class="program-actions">
           <button id="duplicate-program" class="backup-button">Copier le programme actif</button>
+          <button id="create-strength-program" class="backup-button">Créer une base force</button>
           <button id="edit-program" class="backup-button">Modifier le programme actif</button>
           <button id="deload-toggle" class="backup-button">Activer la semaine légère</button>
         </div>
@@ -86,6 +88,7 @@
               <button class="rest-button" data-seconds="90">Repos 90 s</button>
               <button class="rest-button" data-seconds="120">Repos 2 min</button>
             </div>
+            <p class="exercise-timer hidden" aria-live="polite">Repos : <strong>1:30</strong></p>
             <p class="last-performance muted"></p>
             <p class="progression-advice"></p>
             <details class="exercise-history">
@@ -98,6 +101,7 @@
         <div class="series-area">
           <div class="series-list"></div>
           <div class="series-actions">
+            <button class="suggest-warmup" type="button">Ajouter l’échauffement conseillé</button>
             <button class="warmup-set" type="button">+ Échauffement</button>
             <button class="add-set" type="button">+ Ajouter une série</button>
             <button class="remove-set" type="button">− Retirer la dernière</button>
@@ -113,11 +117,14 @@
         <div class="feeling-area">
           <span>Ressenti de l’exercice</span>
           <div class="feeling-buttons">
+            <button type="button" data-feeling="tres_facile" aria-pressed="false">🟢 Trop facile</button>
             <button type="button" data-feeling="facile" aria-pressed="false">🟢 Facile</button>
+            <button type="button" data-feeling="bien" aria-pressed="false">🔵 Bien maîtrisé</button>
             <button type="button" data-feeling="pile" aria-pressed="false">🟡 Tout pile</button>
+            <button type="button" data-feeling="difficile" aria-pressed="false">🟠 Difficile</button>
             <button type="button" data-feeling="galere" aria-pressed="false">🔴 Galère</button>
           </div>
-          <input class="exercise-comment" type="text" maxlength="140" placeholder="Note facultative : technique, douleur, machine…" />
+          <textarea class="exercise-comment" maxlength="280" placeholder="Note facultative : technique, douleur, machine…"></textarea>
         </div>
         <details class="exercise-memory">
           <summary>Note permanente : réglage / technique</summary>
