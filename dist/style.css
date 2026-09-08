@@ -130,6 +130,7 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 }
 
 .exercise-card.completed .variant-area,
+.exercise-card.completed .superset-area,
 .exercise-card.completed .feeling-area,
 .exercise-card.completed .exercise-memory { display: none; }
 
@@ -148,6 +149,12 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 
 .variant-picker { margin-top: 10px; }
 .variant-picker select { width: 100%; }
+
+.superset-area { margin-top: 14px; }
+.superset-area summary { color: var(--muted); cursor: pointer; font-size: .82rem; font-weight: 700; }
+.superset-area label { display: block; margin-top: 10px; color: var(--muted); font-size: .82rem; }
+.superset-area select { margin-top: 6px; width: 100%; }
+.superset-status { font-size: .78rem; line-height: 1.4; margin: 8px 0 0; }
 
 .feeling-area { margin-top: 16px; }
 .feeling-area > span { color: var(--muted); font-size: .78rem; }

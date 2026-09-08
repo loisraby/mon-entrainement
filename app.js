@@ -346,8 +346,11 @@ function debutSemaine(date) {
 }
 
 function updateVolume(card) {
-  const { volume } = lireExercice(card);
-  card.querySelector(".volume").textContent = `Volume : ${formatKg(volume)} kg`;
+  const { volume, volumeAffiche, coefficientCharge } = lireExercice(card);
+  const precision = coefficientCharge !== 1
+    ? ` de référence (${formatKg(volumeAffiche)} kg affichés × ${coefficientCharge.toLocaleString("fr-FR")})`
+    : "";
+  card.querySelector(".volume").textContent = `Volume : ${formatKg(volume)} kg${precision}`;
   updateTotalVolume();
 }
 
@@ -356,7 +359,7 @@ function updateTotalVolume() {
   document.querySelectorAll(".exercise-card").forEach((card) => {
     total += lireExercice(card).volume;
   });
-  document.querySelector("#session-total").textContent = `Volume total : ${formatKg(total)} kg`;
+  document.querySelector("#session-total").textContent = `Volume total : ${formatKg(total)} kg de référence`;
   return total;
 }
 
@@ -369,12 +372,57 @@ function lireExercice(card) {
     terminee: row.classList.contains("set-completed"),
   }));
   const seriesTravail = seriesDetail.filter((serie) => !serie.echauffement);
-  const volume = seriesTravail.reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
+  const coefficientSaisi = Number(card.dataset.chargeCoefficient);
+  const coefficientCharge = Number.isFinite(coefficientSaisi) && coefficientSaisi > 0 ? coefficientSaisi : 1;
+  const volumeAffiche = seriesTravail.reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
+  const volume = volumeAffiche * coefficientCharge;
   const charge = Math.max(...seriesTravail.map((serie) => serie.charge), 0);
+  const chargeReference = charge * coefficientCharge;
   const repetitions = seriesTravail.length
     ? Math.round((seriesTravail.reduce((total, serie) => total + serie.repetitions, 0) / seriesTravail.length) * 10) / 10
     : 0;
-  return { charge, series: seriesTravail.length, repetitions, seriesDetail, volume: card.classList.contains("skipped") ? 0 : volume, passe: card.classList.contains("skipped"), raisonPassage: card.dataset.skipReason || "" };
+  const passe = card.classList.contains("skipped");
+  return {
+    charge,
+    chargeReference,
+    coefficientCharge,
+    series: seriesTravail.length,
+    repetitions,
+    seriesDetail,
+    volume: passe ? 0 : volume,
+    volumeAffiche: passe ? 0 : volumeAffiche,
+    passe,
+    raisonPassage: card.dataset.skipReason || "",
+    supersetAvec: card.dataset.supersetWith || "",
+  };
+}
+
+function nomSuperset(card) {
+  return card.dataset.supersetWith || "";
+}
+
+function afficherSuperset(card) {
+  const partenaire = nomSuperset(card);
+  const zone = card.querySelector(".superset-status");
+  if (!zone) return;
+  zone.textContent = partenaire
+    ? `Après ta série, enchaîne avec ${partenaire} : le repos partira après cet exercice.`
+    : "Le repos partira après chaque série.";
+}
+
+function lancerReposApresSerie(card) {
+  const partenaire = nomSuperset(card);
+  if (!partenaire) {
+    demarrerMinuteur(Number(card.dataset.restSeconds) || 90, card);
+    return;
+  }
+  timerExerciseCard?.querySelector(".exercise-timer")?.classList.add("hidden");
+  timerExerciseCard = card;
+  const minuteur = card.querySelector(".exercise-timer");
+  if (minuteur) {
+    minuteur.innerHTML = `Superset : enchaîne avec <strong>${partenaire}</strong> avant le repos.`;
+    minuteur.classList.remove("hidden");
+  }
 }
 
 function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir = "", terminee = false) {
@@ -399,7 +447,7 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
     row.querySelector(".set-done").textContent = terminee ? "À refaire" : "✓ Série faite";
     const exerciseCard = row.closest(".exercise-card");
     sauvegarderSeanceEnCours(exerciseCard.dataset.day, sessions[exerciseCard.dataset.day]);
-    if (terminee) demarrerMinuteur(Number(exerciseCard.dataset.restSeconds) || 90, exerciseCard);
+    if (terminee) lancerReposApresSerie(exerciseCard);
   });
   list.append(row);
 }
@@ -553,7 +601,7 @@ function afficherHistorique(forceOpen = false) {
     [...historique].reverse().forEach((seance) => {
       const date = new Date(seance.date).toLocaleString("fr-FR");
       const details = (seance.exercices || []).map((exercice) => `
-        <p class="history-exercise">${exercice.nom}${exercice.programmeNom && exercice.programmeNom !== exercice.nom ? ` <span class="variant-history">(variante de ${exercice.programmeNom})</span>` : ""} : ${exercice.passe ? `Exercice passé${exercice.raisonPassage ? ` — ${exercice.raisonPassage}` : ""}` : exercice.seriesDetail?.length ? exercice.seriesDetail.map((serie) => `${serie.echauffement ? "Échauff. " : ""}${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null ? ` (RIR ${serie.rir})` : ""}`).join(" · ") : `${exercice.series} × ${exercice.repetitions} à ${exercice.charge} kg`}${exercice.rir !== undefined && exercice.rir !== null ? ` · RIR ${exercice.rir}` : ""}${exercice.ressenti ? ` · ${RESSENTIS[exercice.ressenti]}` : ""}${exercice.commentaire ? ` — ${exercice.commentaire}` : ""}</p>
+        <p class="history-exercise">${exercice.nom}${exercice.programmeNom && exercice.programmeNom !== exercice.nom ? ` <span class="variant-history">(variante de ${exercice.programmeNom})</span>` : ""} : ${exercice.passe ? `Exercice passé${exercice.raisonPassage ? ` — ${exercice.raisonPassage}` : ""}` : exercice.seriesDetail?.length ? exercice.seriesDetail.map((serie) => `${serie.echauffement ? "Échauff. " : ""}${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null ? ` (RIR ${serie.rir})` : ""}`).join(" · ") : `${exercice.series} × ${exercice.repetitions} à ${exercice.charge} kg`}${exercice.supersetAvec ? ` · Superset → ${exercice.supersetAvec}` : ""}${exercice.rir !== undefined && exercice.rir !== null ? ` · RIR ${exercice.rir}` : ""}${exercice.ressenti ? ` · ${RESSENTIS[exercice.ressenti]}` : ""}${exercice.commentaire ? ` — ${exercice.commentaire}` : ""}</p>
       `).join("") || "<p class='muted'>Détails non enregistrés pour cette ancienne séance.</p>";
       const bilan = seance.ressentiSeance || seance.energie || seance.sommeil || seance.commentaireSeance
         ? `<p class="session-history">Bilan : ${seance.ressentiSeance ? RESSENTIS[seance.ressentiSeance] : "non renseigné"}${seance.energie ? ` · énergie ${seance.energie}/5` : ""}${seance.sommeil ? ` · sommeil ${seance.sommeil}/5` : ""}${seance.commentaireSeance ? ` — ${seance.commentaireSeance}` : ""}</p>`
@@ -1074,14 +1122,14 @@ function fermerEditeurProgramme() {
   renderDay(jourEdite);
 }
 
-function creerChamp(label, valeur, classe, type = "text") {
+function creerChamp(label, valeur, classe, type = "text", step = "0.5") {
   const bloc = document.createElement("label");
   bloc.textContent = label;
   const input = document.createElement("input");
   input.type = type;
   input.className = classe;
   input.value = valeur ?? "";
-  if (type === "number") input.step = "0.5";
+  if (type === "number") input.step = step;
   bloc.append(input);
   return bloc;
 }
@@ -1100,6 +1148,8 @@ function sauvegarderModificationsEditeur(alerter = false) {
       Number(ligne.querySelector(".edit-exercise-weight").value) || 0,
       ligne.querySelector(".edit-exercise-note").value.trim(),
       Number(ligne.querySelector(".edit-exercise-rest").value) || 90,
+      Number(ligne.querySelector(".edit-exercise-coefficient").value) || 1,
+      ligne.querySelector(".edit-exercise-superset").value || "",
     ]);
   }
   sauvegarderProgrammeActif();
@@ -1144,6 +1194,9 @@ function afficherEditeurProgramme() {
   } else {
     const titreSeance = creerChamp("Nom de la séance", session.title, "session-title-input");
     const duree = creerChamp("Durée / indication", session.duration, "session-duration-input");
+    const aideCharges = document.createElement("p");
+    aideCharges.className = "muted";
+    aideCharges.textContent = "Coefficient de charge : 1 garde le poids affiché. Exemple : 29,5 affichés équivalant à 65 → 2,2. Pour une machine dont l’équivalence est inconnue, garde 1 : le volume reste un repère, pas une mesure physique exacte.";
     const exercices = document.createElement("div");
     exercices.className = "editor-exercises";
     session.exercises.forEach((exercice, index) => {
@@ -1155,7 +1208,24 @@ function afficherEditeurProgramme() {
         creerChamp("Charge", exercice[2], "edit-exercise-weight", "number"),
         creerChamp("Note", exercice[3], "edit-exercise-note"),
         creerChamp("Repos (s)", exercice[4] ?? 90, "edit-exercise-rest", "number"),
+        creerChamp("Coefficient de charge", exercice[5] ?? 1, "edit-exercise-coefficient", "number", "0.01"),
       );
+      const superset = document.createElement("label");
+      superset.textContent = "Après cette série, enchaîner avec";
+      const selectSuperset = document.createElement("select");
+      selectSuperset.className = "edit-exercise-superset";
+      selectSuperset.innerHTML = "<option value=''>Aucun superset</option>";
+      session.exercises
+        .filter((autreExercice) => autreExercice[0] !== exercice[0])
+        .forEach((autreExercice) => {
+          const option = document.createElement("option");
+          option.value = autreExercice[0];
+          option.textContent = autreExercice[0];
+          selectSuperset.append(option);
+        });
+      selectSuperset.value = exercice[6] || "";
+      superset.append(selectSuperset);
+      ligne.append(superset);
       const ordre = document.createElement("div");
       ordre.className = "editor-exercise-actions";
       const monter = document.createElement("button");
@@ -1199,11 +1269,11 @@ function afficherEditeurProgramme() {
     ajouterExercice.className = "backup-button";
     ajouterExercice.textContent = "+ Ajouter un exercice";
     ajouterExercice.addEventListener("click", () => {
-      session.exercises.push(["Nouvel exercice", "3 × 10", 0, "", 90]);
+      session.exercises.push(["Nouvel exercice", "3 × 10", 0, "", 90, 1, ""]);
       sauvegarderProgrammeActif();
       afficherEditeurProgramme();
     });
-    programEditor.append(titreSeance, duree, exercices, ajouterExercice);
+    programEditor.append(titreSeance, duree, aideCharges, exercices, ajouterExercice);
   }
 
   const actions = document.createElement("div");
@@ -1284,7 +1354,14 @@ function afficherTempsRepos(restant) {
   const texte = `${Math.floor(restant / 60)}:${String(restant % 60).padStart(2, "0")}`;
   document.querySelector("#timer-display").textContent = texte;
   const minuteurExercice = timerExerciseCard?.querySelector(".exercise-timer");
-  if (minuteurExercice) minuteurExercice.querySelector("strong").textContent = texte;
+  if (minuteurExercice) {
+    let valeur = minuteurExercice.querySelector("strong");
+    if (!valeur) {
+      minuteurExercice.innerHTML = "Repos : <strong></strong>";
+      valeur = minuteurExercice.querySelector("strong");
+    }
+    valeur.textContent = texte;
+  }
 }
 
 function demarrerMinuteur(secondes, exerciseCard = null) {
@@ -1295,7 +1372,11 @@ function demarrerMinuteur(secondes, exerciseCard = null) {
   clearInterval(timerInterval);
   timerExerciseCard?.querySelector(".exercise-timer")?.classList.add("hidden");
   timerExerciseCard = exerciseCard;
-  timerExerciseCard?.querySelector(".exercise-timer")?.classList.remove("hidden");
+  const minuteurExercice = timerExerciseCard?.querySelector(".exercise-timer");
+  if (minuteurExercice) {
+    minuteurExercice.innerHTML = "Repos : <strong></strong>";
+    minuteurExercice.classList.remove("hidden");
+  }
   timerEndAt = Date.now() + secondes * 1000;
   function afficherTemps() {
     const restant = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
@@ -1360,12 +1441,13 @@ function renderDay(day, brouillon = null) {
     ? brouillonTrouve
     : null;
   workout.dataset.commenceeLe = seanceEnCours?.commenceeLe || "";
-  session.exercises.forEach(([name, target, weight, note, restSeconds = 90]) => {
+  session.exercises.forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = ""]) => {
     const card = template.content.cloneNode(true);
     const exerciseCard = card.querySelector(".exercise-card");
     exerciseCard.dataset.programmeName = name;
     exerciseCard.dataset.day = day;
     exerciseCard.dataset.restSeconds = restSeconds;
+    exerciseCard.dataset.chargeCoefficient = coefficientCharge;
     card.querySelector(".exercise-note").textContent = note;
     card.querySelector(".target").textContent = target;
     const boutonReposConseille = card.querySelector('[data-seconds="90"]');
@@ -1383,6 +1465,38 @@ function renderDay(day, brouillon = null) {
     const notePermanente = card.querySelector(".exercise-memory-input");
     notePermanente.value = getNotesExercices()[nomEffectif] || "";
     notePermanente.addEventListener("input", () => sauvegarderNoteExercice(exerciseCard.querySelector(".exercise-name").textContent, notePermanente.value));
+
+    const selectSuperset = card.querySelector(".superset-select");
+    const aucunSuperset = document.createElement("option");
+    aucunSuperset.value = "";
+    aucunSuperset.textContent = "Aucun superset";
+    selectSuperset.append(aucunSuperset);
+    session.exercises
+      .map(([nom]) => nom)
+      .filter((nom) => nom !== name)
+      .forEach((nom) => {
+        const option = document.createElement("option");
+        option.value = nom;
+        option.textContent = nom;
+        selectSuperset.append(option);
+      });
+    const supersetBrouillon = ancienExercice && Object.prototype.hasOwnProperty.call(ancienExercice, "supersetAvec")
+      ? ancienExercice.supersetAvec
+      : supersetPlanifie;
+    if (supersetBrouillon && ![...selectSuperset.options].some((option) => option.value === supersetBrouillon)) {
+      const option = document.createElement("option");
+      option.value = supersetBrouillon;
+      option.textContent = supersetBrouillon;
+      selectSuperset.append(option);
+    }
+    selectSuperset.value = supersetBrouillon || "";
+    exerciseCard.dataset.supersetWith = selectSuperset.value;
+    afficherSuperset(exerciseCard);
+    selectSuperset.addEventListener("change", () => {
+      exerciseCard.dataset.supersetWith = selectSuperset.value;
+      afficherSuperset(exerciseCard);
+      sauvegarderSeanceEnCours(day, session);
+    });
 
     const selectVariante = card.querySelector(".variant-select");
     const variantes = [...new Set([name, ...(VARIANTES[name] || []), nomEffectif])];
@@ -1503,7 +1617,7 @@ function renderDay(day, brouillon = null) {
       exerciseCard.querySelector(".exercise-status").textContent = completed ? "Terminé ✓" : "";
       updateSessionProgress();
       sauvegarderSeanceEnCours(day, session);
-      if (completed) demarrerMinuteur(restSeconds, exerciseCard);
+      if (completed) lancerReposApresSerie(exerciseCard);
     });
     card.querySelector(".skip-exercise").addEventListener("click", (event) => {
       const exerciseCard = event.currentTarget.closest(".exercise-card");
