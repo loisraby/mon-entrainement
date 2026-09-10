@@ -4,6 +4,11 @@ const PROGRAMMES_KEY = "programmes_entrainement_v1";
 const PROGRAMME_ACTIF_KEY = "programme_actif_v1";
 const NOTES_EXERCICES_KEY = "notes_exercices_v1";
 const MESURES_KEY = "mesures_corporelles_v1";
+const MESURES_HISTORIQUES_KEY = "mesures_historiques_importees_v1";
+const MESURES_HISTORIQUES = [
+  ["2025-04-14T11:50:00",80],["2025-04-16T10:12:00",80.1],["2025-04-16T10:12:00",80.9],["2025-04-16T19:57:00",80.2],["2025-04-24T12:02:00",79.9],["2025-04-25T09:13:00",80.45],
+  ["2026-03-08T00:04:00",84.4],["2026-03-22T12:27:00",84.6],["2026-03-24T20:11:00",84.6],["2026-03-26T22:01:00",86],["2026-03-28T11:50:00",84],["2026-04-19T18:40:00",82.4],["2026-04-20T18:33:00",82.5],["2026-04-21T19:51:00",82.3],["2026-04-22T16:03:00",81.9],["2026-04-24T18:24:00",80.6],["2026-04-25T10:58:00",80.9],["2026-04-27T07:55:00",81.4],["2026-05-08T13:21:00",81.4],["2026-05-12T20:34:00",80.6],["2026-05-27T15:52:00",80.7],["2026-06-04T10:11:00",81.9],["2026-06-05T21:31:00",82.1],["2026-06-09T07:08:00",81.7],["2026-06-09T20:08:00",81.3],["2026-06-12T07:26:00",81],["2026-06-13T09:40:00",81.1],["2026-06-13T09:50:00",80.8],["2026-07-06T19:50:00",77.3],["2026-07-09T08:30:00",77.3],["2026-07-24T07:15:00",77.6],["2026-07-24T20:01:00",77.4],["2026-07-27T10:42:00",77.2],["2026-07-30T20:57:00",76.5],["2026-08-05T08:47:00",77.8],["2026-08-14T13:59:00",77.8],["2026-08-14T13:59:00",77.2],["2026-08-18T08:58:00",77.7],["2026-08-19T07:49:00",77.3],["2026-09-05T07:27:00",78.3],["2026-09-09T07:25:00",77.9],["2026-09-10T09:10:00",78.5],
+].map(([date, poids]) => ({ date, poids, taille: null, source: "historique" }));
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
 let sessions = {};
@@ -86,7 +91,27 @@ function getHistorique() {
 }
 
 function getMesures() {
-  try { return JSON.parse(localStorage.getItem(MESURES_KEY) || "[]"); } catch { return []; }
+  try {
+    const mesures = JSON.parse(localStorage.getItem(MESURES_KEY) || "[]");
+    if (!localStorage.getItem(MESURES_HISTORIQUES_KEY)) {
+      const fusion = [...mesures, ...MESURES_HISTORIQUES.filter((historique) => !mesures.some((mesure) => mesure.date === historique.date && Number(mesure.poids) === historique.poids))]
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      localStorage.setItem(MESURES_KEY, JSON.stringify(fusion));
+      localStorage.setItem(MESURES_HISTORIQUES_KEY, "oui");
+      return fusion;
+    }
+    return mesures.sort((a, b) => new Date(a.date) - new Date(b.date));
+  } catch { return []; }
+}
+
+function moyennePoids7Jours(mesures) {
+  const pesees = mesures.filter((mesure) => Number(mesure.poids) > 0);
+  const derniere = pesees.at(-1);
+  if (!derniere) return null;
+  const limite = new Date(derniere.date);
+  limite.setDate(limite.getDate() - 6);
+  const valeurs = pesees.filter((mesure) => new Date(mesure.date) >= limite).map((mesure) => Number(mesure.poids));
+  return valeurs.length ? valeurs.reduce((total, poids) => total + poids, 0) / valeurs.length : null;
 }
 
 function rappelSauvegarde(historique = getHistorique()) {
@@ -191,6 +216,10 @@ function sauvegarderSeanceEnCours(day, session) {
     return {
       nom: card.querySelector(".exercise-name").textContent,
       programmeNom: card.dataset.programmeName,
+      ajoute: card.dataset.ajoute === "true",
+      objectif: card.dataset.target || "3 × 10",
+      noteProgramme: card.dataset.noteProgramme || "",
+      restSeconds: Number(card.dataset.restSeconds) || 90,
       ...donnees,
       termine: card.classList.contains("completed"),
       passe: card.classList.contains("skipped"),
@@ -837,6 +866,7 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
         return `<li>${groupe}<strong>~${realise.toFixed(1).replace(".", ",")} / ${prevu} séries · ${etat}</strong></li>`;
       }).join("");
     const mesures = getMesures();
+    const moyennePoids = moyennePoids7Jours(mesures);
     const derniereMesure = mesures.at(-1);
     const premiereMesure = mesures[0];
     const evolutionMesure = (cle, unite) => {
@@ -917,9 +947,11 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
       <h3>Poids et mensurations</h3>
       <button id="add-measurement" class="backup-button">Ajouter une mesure</button>
       <p class="muted">Dernière mesure : ${derniereMesure ? `${derniereMesure.poids || "—"} kg${derniereMesure.taille ? ` · taille ${derniereMesure.taille} cm` : ""}` : "aucune"}</p>
+      ${moyennePoids ? `<p class="muted">Tendance sur 7 jours : ${moyennePoids.toFixed(1).replace(".", ",")} kg · mesures prises le matin.</p>` : ""}
       ${evolutionsMesures ? `<p class="muted">Évolution depuis la première mesure : ${evolutionsMesures}</p>` : ""}
       <ul class="records-list">${mesuresRecentes || "<li>Aucune mesure enregistrée.</li>"}</ul>
       <h4>Évolution du poids</h4>
+      <p class="muted">Repères : déficit léger avec reprise salle/course au printemps et en été · reprise progressive de la construction musculaire en septembre.</p>
       ${graphiquePoids}
       <h4>Évolution du tour de taille</h4>
       ${graphiqueTaille}
@@ -1441,13 +1473,19 @@ function renderDay(day, brouillon = null) {
     ? brouillonTrouve
     : null;
   workout.dataset.commenceeLe = seanceEnCours?.commenceeLe || "";
-  session.exercises.forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = ""]) => {
+  const exercicesAjoutes = (seanceEnCours?.exercices || [])
+    .filter((exercice) => exercice.ajoute)
+    .map((exercice) => [exercice.nom, exercice.objectif || "3 × 10", exercice.charge || 0, exercice.noteProgramme || "Ajouté pendant la séance", exercice.restSeconds || 90, exercice.coefficientCharge || 1, exercice.supersetAvec || "", true]);
+  [...session.exercises, ...exercicesAjoutes].forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = "", estAjoute = false]) => {
     const card = template.content.cloneNode(true);
     const exerciseCard = card.querySelector(".exercise-card");
     exerciseCard.dataset.programmeName = name;
     exerciseCard.dataset.day = day;
     exerciseCard.dataset.restSeconds = restSeconds;
     exerciseCard.dataset.chargeCoefficient = coefficientCharge;
+    exerciseCard.dataset.ajoute = estAjoute;
+    exerciseCard.dataset.target = target;
+    exerciseCard.dataset.noteProgramme = note;
     card.querySelector(".exercise-note").textContent = note;
     card.querySelector(".target").textContent = target;
     const boutonReposConseille = card.querySelector('[data-seconds="90"]');
@@ -1645,6 +1683,25 @@ function renderDay(day, brouillon = null) {
 
   workout.querySelectorAll(".exercise-card").forEach(updateVolume);
   updateSessionProgress();
+  const ajouterExerciceLibre = document.createElement("button");
+  ajouterExerciceLibre.type = "button";
+  ajouterExerciceLibre.className = "backup-button";
+  ajouterExerciceLibre.textContent = "+ Ajouter un exercice libre";
+  ajouterExerciceLibre.addEventListener("click", () => {
+    const nom = prompt("Nom de l’exercice fait en dehors du programme :", "");
+    if (!nom?.trim()) return;
+    sauvegarderSeanceEnCours(day, session);
+    const brouillonAjoute = getSeanceEnCours();
+    brouillonAjoute.exercices.push({
+      nom: nom.trim(), programmeNom: nom.trim(), ajoute: true, objectif: "3 × 10",
+      noteProgramme: "Ajouté pendant la séance", restSeconds: 90, coefficientCharge: 1,
+      charge: 0, series: 0, repetitions: 0, seriesDetail: [], volume: 0,
+      passe: false, termine: false, supersetAvec: "",
+    });
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(brouillonAjoute));
+    renderDay(day, brouillonAjoute);
+  });
+  workout.append(ajouterExerciceLibre);
   workout.insertAdjacentHTML("beforeend", `
     <section class="session-feedback" aria-label="Bilan de la séance">
       <h3>Bilan de la séance</h3>

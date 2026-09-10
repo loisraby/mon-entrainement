@@ -122,7 +122,10 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 .exercise-card.completed .series-area,
 .exercise-card.completed .volume,
 .exercise-card.completed .rest-actions,
-.exercise-card.completed .last-performance { display: none; }
+.exercise-card.completed .exercise-note,
+.exercise-card.completed .last-performance,
+.exercise-card.completed .progression-advice,
+.exercise-card.completed .exercise-history { display: none; }
 
 .exercise-card.completed .complete-exercise {
   border-color: var(--line);
