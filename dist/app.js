@@ -11,6 +11,12 @@ const MESURES_HISTORIQUES = [
 ].map(([date, poids]) => ({ date, poids, taille: null, source: "historique" }));
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
+const SEANCE_LIBRE_JOUR = "__libre__";
+const SEANCE_LIBRE = {
+  title: "Séance libre / cabinet",
+  duration: "Ajoute seulement les exercices que tu fais aujourd’hui.",
+  exercises: [],
+};
 let sessions = {};
 let programmeActif = null;
 let timerInterval = null;
@@ -77,6 +83,7 @@ document.querySelector("#history-button").addEventListener("click", () => affich
 document.querySelector("#stats-button").addEventListener("click", () => afficherStatistiques());
 document.querySelector("#analysis-button").addEventListener("click", () => afficherAnalyse());
 document.querySelector("#programs-button").addEventListener("click", () => afficherProgrammes());
+document.querySelector("#free-workout-button").addEventListener("click", commencerSeanceLibre);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
 document.querySelector("#create-strength-program").addEventListener("click", creerProgrammeForce);
 document.querySelector("#edit-program").addEventListener("click", ouvrirEditeurProgramme);
@@ -209,8 +216,24 @@ function getSeanceEnCours() {
   }
 }
 
+function getSessionDuJour(day) {
+  return day === SEANCE_LIBRE_JOUR ? SEANCE_LIBRE : sessions[day];
+}
+
+function commencerSeanceLibre() {
+  const brouillon = getSeanceEnCours();
+  if (brouillon && brouillon.jour !== SEANCE_LIBRE_JOUR) {
+    const continuer = confirm(`Une séance « ${brouillon.nom} » est déjà en cours. La remplacer par une séance libre ?`);
+    if (!continuer) return;
+    localStorage.removeItem(DRAFT_KEY);
+    draftPanel.classList.add("hidden");
+  }
+  renderDay(SEANCE_LIBRE_JOUR, brouillon?.jour === SEANCE_LIBRE_JOUR ? brouillon : null);
+}
+
 function sauvegarderSeanceEnCours(day, session) {
   const ancienneSeance = getSeanceEnCours();
+  const estLeMemeBrouillon = ancienneSeance?.jour === day && ancienneSeance?.nom === session.title;
   const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
     const donnees = lireExercice(card);
     return {
@@ -232,7 +255,7 @@ function sauvegarderSeanceEnCours(day, session) {
     programme: programmeActif?.nom || null,
     jour: day,
     nom: session.title,
-    commenceeLe: ancienneSeance?.commenceeLe || workout.dataset.commenceeLe || new Date().toISOString(),
+    commenceeLe: estLeMemeBrouillon ? ancienneSeance.commenceeLe : (workout.dataset.commenceeLe || new Date().toISOString()),
     modifieeLe: new Date().toISOString(),
     exercices,
     ressentiSeance: workout.querySelector(".session-feedback")?.dataset.ressenti || null,
@@ -264,7 +287,7 @@ function reprendreSeanceEnCours() {
   const programmes = getProgrammes();
   const programmeDuBrouillon = programmes.find((programme) => programme.id === brouillon.programmeId);
   if (programmeDuBrouillon) activerProgramme(programmeDuBrouillon.id, false);
-  if (!sessions[brouillon.jour]) return;
+  if (!getSessionDuJour(brouillon.jour)) return;
   draftPanel.classList.add("hidden");
   renderDay(brouillon.jour, brouillon);
 }
@@ -1459,23 +1482,24 @@ function renderDay(day, brouillon = null) {
     button.classList.toggle("active", button.textContent === day);
   });
   workout.innerHTML = "";
-  const session = sessions[day];
+  const session = getSessionDuJour(day);
   if (!session) {
     workout.innerHTML = "<p class='rest'>Aujourd’hui : récupération, course ou mobilité selon ton programme.</p>";
     return;
   }
 
-  const semaineLegere = Boolean(programmeActif?.semaineLegere);
+  const semaineLegere = day !== SEANCE_LIBRE_JOUR && Boolean(programmeActif?.semaineLegere);
   const derniereSeance = trouverDerniereSeance(day);
   workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? "<p class='deload-banner'>Semaine légère : environ −10 % de charge et une série de moins. Ajuste librement selon ta forme.</p>" : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
   const brouillonTrouve = brouillon || getSeanceEnCours();
-  const seanceEnCours = brouillonTrouve && (!brouillonTrouve.programmeId || brouillonTrouve.programmeId === programmeActif?.id)
+  const seanceEnCours = brouillonTrouve?.jour === day && (!brouillonTrouve.programmeId || brouillonTrouve.programmeId === programmeActif?.id)
     ? brouillonTrouve
     : null;
   workout.dataset.commenceeLe = seanceEnCours?.commenceeLe || "";
   const exercicesAjoutes = (seanceEnCours?.exercices || [])
     .filter((exercice) => exercice.ajoute)
     .map((exercice) => [exercice.nom, exercice.objectif || "3 × 10", exercice.charge || 0, exercice.noteProgramme || "Ajouté pendant la séance", exercice.restSeconds || 90, exercice.coefficientCharge || 1, exercice.supersetAvec || "", true]);
+  const nomsSupersetDisponibles = [...session.exercises, ...exercicesAjoutes].map(([nom]) => nom);
   [...session.exercises, ...exercicesAjoutes].forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = "", estAjoute = false]) => {
     const card = template.content.cloneNode(true);
     const exerciseCard = card.querySelector(".exercise-card");
@@ -1509,8 +1533,7 @@ function renderDay(day, brouillon = null) {
     aucunSuperset.value = "";
     aucunSuperset.textContent = "Aucun superset";
     selectSuperset.append(aucunSuperset);
-    session.exercises
-      .map(([nom]) => nom)
+    nomsSupersetDisponibles
       .filter((nom) => nom !== name)
       .forEach((nom) => {
         const option = document.createElement("option");
@@ -1529,6 +1552,7 @@ function renderDay(day, brouillon = null) {
     }
     selectSuperset.value = supersetBrouillon || "";
     exerciseCard.dataset.supersetWith = selectSuperset.value;
+    card.querySelector(".superset-area").open = day === SEANCE_LIBRE_JOUR;
     afficherSuperset(exerciseCard);
     selectSuperset.addEventListener("change", () => {
       exerciseCard.dataset.supersetWith = selectSuperset.value;
@@ -1686,7 +1710,7 @@ function renderDay(day, brouillon = null) {
   const ajouterExerciceLibre = document.createElement("button");
   ajouterExerciceLibre.type = "button";
   ajouterExerciceLibre.className = "backup-button";
-  ajouterExerciceLibre.textContent = "+ Ajouter un exercice libre";
+  ajouterExerciceLibre.textContent = day === SEANCE_LIBRE_JOUR ? "+ Ajouter un exercice" : "+ Ajouter à cette séance";
   ajouterExerciceLibre.addEventListener("click", () => {
     const nom = prompt("Nom de l’exercice fait en dehors du programme :", "");
     if (!nom?.trim()) return;
