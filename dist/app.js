@@ -166,17 +166,16 @@ function hautDeFourchette(objectif) {
 
 function conseilProgression(performance, objectif) {
   if (!performance) return "Première séance : choisis une charge propre et note ton ressenti.";
-  const serie = resumeSeries(performance);
   const dernierRir = performance.seriesDetail?.filter((item) => !item.echauffement).at(-1)?.rir ?? performance.rir;
   const haut = hautDeFourchette(objectif);
   const seriesTravail = performance.seriesDetail?.filter((item) => !item.echauffement) || [];
   const hautAtteint = haut && seriesTravail.length && seriesTravail.every((item) => Number(item.repetitions) >= haut);
-  if (hautAtteint && Number(dernierRir) >= 2) return `Objectif atteint : ${serie}. Tu peux tester le plus petit incrément de charge disponible, puis repartir vers le bas de la fourchette.`;
-  if (Number(dernierRir) <= 1 && dernierRir !== null && dernierRir !== "" && dernierRir !== undefined) return `Dernière fois : ${serie}. Dernière série à RIR ${dernierRir} : garde la charge et vise une exécution aussi propre avant de chercher à progresser.`;
-  if (Number(dernierRir) >= 3) return `Dernière fois : ${serie}. Dernière série à RIR ${dernierRir} : tu as de la marge, ajoute 1 rep par série ou augmente légèrement la charge.`;
-  if (performance.ressenti === "facile") return `Dernière fois : ${serie}. Tu peux viser +1 rep par série, ou augmenter légèrement la charge si tu étais déjà au haut de ta fourchette.`;
-  if (performance.ressenti === "galere") return `Dernière fois : ${serie}. Garde la charge et cherche surtout des reps propres ; ne force pas une hausse aujourd’hui.`;
-  return `Dernière fois : ${serie}. Garde la charge et essaie d’ajouter 1 rep au total si la forme reste bonne.`;
+  if (hautAtteint && Number(dernierRir) >= 2) return "Objectif atteint : tu peux tester le plus petit incrément de charge disponible, puis repartir vers le bas de la fourchette.";
+  if (Number(dernierRir) <= 1 && dernierRir !== null && dernierRir !== "" && dernierRir !== undefined) return `Dernière série à RIR ${dernierRir} : garde la charge et vise une exécution aussi propre avant de chercher à progresser.`;
+  if (Number(dernierRir) >= 3) return `Dernière série à RIR ${dernierRir} : tu as de la marge, ajoute 1 rep par série ou augmente légèrement la charge.`;
+  if (performance.ressenti === "facile") return "Tu peux viser +1 rep par série, ou augmenter légèrement la charge si tu étais déjà au haut de ta fourchette.";
+  if (performance.ressenti === "galere") return "Garde la charge et cherche surtout des reps propres ; ne force pas une hausse aujourd’hui.";
+  return "Garde la charge et essaie d’ajouter 1 rep au total si la forme reste bonne.";
 }
 
 function resumeSeries(performance) {
