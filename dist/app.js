@@ -164,18 +164,45 @@ function hautDeFourchette(objectif) {
   return resultat ? Number(resultat[1]) : null;
 }
 
-function conseilProgression(performance, objectif) {
+function basDeFourchette(objectif) {
+  const resultat = String(objectif || "").match(/×\s*(\d+)/);
+  return resultat ? Number(resultat[1]) : null;
+}
+
+function seriesDeTravail(performance) {
+  return (performance?.seriesDetail || []).filter((serie) => !serie.echauffement && Number(serie.repetitions) > 0);
+}
+
+function totalRepetitions(performance) {
+  return seriesDeTravail(performance).reduce((total, serie) => total + Number(serie.repetitions), 0);
+}
+
+function conseilProgression(performance, objectif, nomExercice = "") {
   if (!performance) return "Première séance : choisis une charge propre et note ton ressenti.";
-  const dernierRir = performance.seriesDetail?.filter((item) => !item.echauffement).at(-1)?.rir ?? performance.rir;
+  const seriesTravail = seriesDeTravail(performance);
+  if (!seriesTravail.length) return "Note les reps de tes séries pour obtenir une recommandation précise.";
+  const dernierRir = seriesTravail.at(-1)?.rir ?? performance.rir;
+  const charge = Math.max(...seriesTravail.map((serie) => Number(serie.charge) || 0));
+  const total = totalRepetitions(performance);
   const haut = hautDeFourchette(objectif);
-  const seriesTravail = performance.seriesDetail?.filter((item) => !item.echauffement) || [];
+  const bas = basDeFourchette(objectif);
+  const nombreSeries = seriesTravail.length;
   const hautAtteint = haut && seriesTravail.length && seriesTravail.every((item) => Number(item.repetitions) >= haut);
-  if (hautAtteint && Number(dernierRir) >= 2) return "Objectif atteint : tu peux tester le plus petit incrément de charge disponible, puis repartir vers le bas de la fourchette.";
-  if (Number(dernierRir) <= 1 && dernierRir !== null && dernierRir !== "" && dernierRir !== undefined) return `Dernière série à RIR ${dernierRir} : garde la charge et vise une exécution aussi propre avant de chercher à progresser.`;
-  if (Number(dernierRir) >= 3) return `Dernière série à RIR ${dernierRir} : tu as de la marge, ajoute 1 rep par série ou augmente légèrement la charge.`;
-  if (performance.ressenti === "facile") return "Tu peux viser +1 rep par série, ou augmenter légèrement la charge si tu étais déjà au haut de ta fourchette.";
-  if (performance.ressenti === "galere") return "Garde la charge et cherche surtout des reps propres ; ne force pas une hausse aujourd’hui.";
-  return "Garde la charge et essaie d’ajouter 1 rep au total si la forme reste bonne.";
+  const repsSuivantes = seriesTravail.map((serie) => Number(serie.repetitions));
+  const indexAProgresser = repsSuivantes.indexOf(Math.min(...repsSuivantes));
+  if (!haut || repsSuivantes[indexAProgresser] < haut) repsSuivantes[indexAProgresser] += 1;
+  const cibleSeries = repsSuivantes.join(" / ");
+  const passagesMemeCharge = nomExercice
+    ? derniersPassages(nomExercice).filter(({ exercice }) => Math.abs((Number(exercice.charge) || 0) - charge) < 0.01).slice(0, 3)
+    : [];
+  const tendance = passagesMemeCharge.length >= 3
+    ? ` Sur cette charge, tes totaux récents sont ${passagesMemeCharge.slice().reverse().map(({ exercice }) => totalRepetitions(exercice)).join(" → ")} reps.`
+    : "";
+  if (hautAtteint && Number(dernierRir) >= 2) return `Monte légèrement au prochain palier. Repars vers ${bas || Math.max(1, haut - 3)} reps par série (${(bas || Math.max(1, haut - 3)) * nombreSeries} reps au total) en gardant au moins RIR 1–2.`;
+  if (performance.ressenti === "galere" || Number(dernierRir) === 0) return `Garde ${formatKg(charge)} kg : objectif, reproduire au moins ${seriesTravail.map((serie) => serie.repetitions).join(" / ")} reps propres (${total} au total) avant de chercher +1 rep.${tendance}`;
+  if (bas && seriesTravail.some((serie) => Number(serie.repetitions) < bas)) return `Garde ${formatKg(charge)} kg et vise d’abord ${bas} reps par série (${bas * nombreSeries} au total). Prochaine cible réaliste : ${cibleSeries} reps.${tendance}`;
+  if (Number(dernierRir) >= 3 || performance.ressenti === "facile") return `Garde ${formatKg(charge)} kg et vise ${cibleSeries} reps (${total + 1} au total). Tu avais de la marge, donc cette progression est raisonnable.${tendance}`;
+  return `Garde ${formatKg(charge)} kg et vise ${cibleSeries} reps (${total + 1} au total), si la forme reste propre.${tendance}`;
 }
 
 function resumeSeries(performance) {
@@ -1521,7 +1548,7 @@ function renderDay(day, brouillon = null) {
     card.querySelector(".exercise-name").textContent = nomEffectif;
     const dernierePerformance = trouverDernierePerformance(nomEffectif);
     card.querySelector(".last-performance").textContent = texteDernierePerformance(dernierePerformance);
-    card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance, target);
+    card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance, target, nomEffectif);
     afficherDerniersPassages(nomEffectif, card.querySelector(".exercise-history-list"));
     const notePermanente = card.querySelector(".exercise-memory-input");
     notePermanente.value = getNotesExercices()[nomEffectif] || "";
@@ -1594,7 +1621,7 @@ function renderDay(day, brouillon = null) {
       exerciseCard.querySelector(".exercise-name").textContent = nouveauNom;
       const derniere = trouverDernierePerformance(nouveauNom);
       exerciseCard.querySelector(".last-performance").textContent = texteDernierePerformance(derniere);
-      exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere, target);
+      exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere, target, nouveauNom);
       afficherDerniersPassages(nouveauNom, exerciseCard.querySelector(".exercise-history-list"));
       notePermanente.value = getNotesExercices()[nouveauNom] || "";
       if (derniere?.seriesDetail?.length) {
