@@ -85,6 +85,7 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
   font-weight: 800;
   padding: 15px;
 }
+.skip-workout-button { width: 100%; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 700; margin: 14px 0 8px; padding: 12px; }
 
 .session-progress { color: var(--green); font-weight: 800; }
 .save-status { color: var(--muted); font-size: 0.78rem; margin: 4px 0 14px; }

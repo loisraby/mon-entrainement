@@ -97,6 +97,10 @@ function getHistorique() {
   return JSON.parse(localStorage.getItem("historique") || "[]");
 }
 
+function getSeancesRealisees() {
+  return getHistorique().filter((seance) => !seance.seanceIgnoree);
+}
+
 function getMesures() {
   try {
     const mesures = JSON.parse(localStorage.getItem(MESURES_KEY) || "[]");
@@ -558,7 +562,7 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
   statsPanel.classList.add("hidden");
   programsPanel.classList.add("hidden");
   analysisPanel.classList.add("hidden");
-  const historiqueComplet = getHistorique();
+  const historiqueComplet = getSeancesRealisees();
   const programmesHistorique = [...new Map(historiqueComplet.map((seance) => [
     seance.programmeId || seance.programme || "sans-programme",
     seance.programme || "Anciennes séances",
@@ -678,7 +682,9 @@ function afficherHistorique(forceOpen = false) {
     }
     [...historique].reverse().forEach((seance) => {
       const date = new Date(seance.date).toLocaleString("fr-FR");
-      const details = (seance.exercices || []).map((exercice) => `
+      const details = seance.seanceIgnoree
+        ? `<p class="muted">Séance passée${seance.raisonPassageSeance ? ` — ${seance.raisonPassageSeance}` : ""}. Elle est exclue des statistiques.</p>`
+        : (seance.exercices || []).map((exercice) => `
         <p class="history-exercise">${exercice.nom}${exercice.programmeNom && exercice.programmeNom !== exercice.nom ? ` <span class="variant-history">(variante de ${exercice.programmeNom})</span>` : ""} : ${exercice.passe ? `Exercice passé${exercice.raisonPassage ? ` — ${exercice.raisonPassage}` : ""}` : exercice.seriesDetail?.length ? exercice.seriesDetail.map((serie) => `${serie.echauffement ? "Échauff. " : ""}${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null ? ` (RIR ${serie.rir})` : ""}`).join(" · ") : `${exercice.series} × ${exercice.repetitions} à ${exercice.charge} kg`}${exercice.supersetAvec ? ` · Superset → ${exercice.supersetAvec}` : ""}${exercice.rir !== undefined && exercice.rir !== null ? ` · RIR ${exercice.rir}` : ""}${exercice.ressenti ? ` · ${RESSENTIS[exercice.ressenti]}` : ""}${exercice.commentaire ? ` — ${exercice.commentaire}` : ""}</p>
       `).join("") || "<p class='muted'>Détails non enregistrés pour cette ancienne séance.</p>";
       const bilan = seance.ressentiSeance || seance.energie || seance.sommeil || seance.commentaireSeance
@@ -688,7 +694,7 @@ function afficherHistorique(forceOpen = false) {
       historyList.insertAdjacentHTML("beforeend", `
         <article class="history-entry" data-programme="${encodeURIComponent(seance.programmeId || seance.programme || "sans-programme")}" data-recherche="${`${seance.nom || ""} ${seance.programme || ""} ${(seance.exercices || []).map((exercice) => exercice.nom).join(" ")}`.toLocaleLowerCase("fr-FR")}">
           <strong>${seance.nom}</strong>
-          <p class="muted">${date} · ${seance.programme ? `${seance.programme} · ` : ""}${seance.semaineLegere ? "Semaine légère · " : ""}Volume : ${formatKg(seance.volume)} kg${seance.dureeSecondes ? ` · ${formatDuree(seance.dureeSecondes)}` : ""}</p>
+          <p class="muted">${date} · ${seance.programme ? `${seance.programme} · ` : ""}${seance.semaineLegere ? "Semaine légère · " : ""}${seance.seanceIgnoree ? "Séance passée" : `Volume : ${formatKg(seance.volume)} kg${seance.dureeSecondes ? ` · ${formatDuree(seance.dureeSecondes)}` : ""}`}</p>
           ${bilan}
           ${details}
           <button class="delete-session" data-id="${deleteId}">Supprimer</button>
@@ -818,7 +824,7 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
   historyPanel.classList.add("hidden");
   analysisPanel.classList.add("hidden");
   programsPanel.classList.add("hidden");
-  const historiqueComplet = getHistorique();
+  const historiqueComplet = getSeancesRealisees();
   const programmesHistorique = [...new Map(historiqueComplet.map((seance) => [
     seance.programmeId || seance.programme || "sans-programme",
     seance.programme || "Anciennes séances",
@@ -1086,7 +1092,7 @@ function afficherProgrammes() {
   programEditor.classList.add("hidden");
   document.querySelector("#deload-toggle").textContent = programmeActif?.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
   programList.innerHTML = "";
-  const dernierDeload = [...getHistorique()].reverse().find((seance) => seance.semaineLegere && seance.programmeId === programmeActif?.id);
+  const dernierDeload = [...getSeancesRealisees()].reverse().find((seance) => seance.semaineLegere && seance.programmeId === programmeActif?.id);
   const texteDeload = dernierDeload
     ? `Dernière semaine légère enregistrée : ${new Date(dernierDeload.date).toLocaleDateString("fr-FR")}.`
     : "Aucune semaine légère enregistrée pour ce programme. À envisager si fatigue et stagnation s’installent, pas juste par automatisme.";
@@ -1389,7 +1395,7 @@ async function chargerProgramme() {
 }
 
 function trouverDernierePerformance(nomExercice) {
-  const historique = getHistorique();
+  const historique = getSeancesRealisees();
   for (let index = historique.length - 1; index >= 0; index--) {
     const performance = (historique[index].exercices || []).find((exercice) => exercice.nom === nomExercice && !exercice.passe);
     if (performance) return performance;
@@ -1398,7 +1404,7 @@ function trouverDernierePerformance(nomExercice) {
 }
 
 function trouverDerniereSeance(jour) {
-  const historique = getHistorique();
+  const historique = getSeancesRealisees();
   for (let index = historique.length - 1; index >= 0; index--) {
     const seance = historique[index];
     const memeProgramme = seance.programmeId
@@ -1418,7 +1424,7 @@ function texteDerniereSeance(seance) {
 }
 
 function derniersPassages(nomExercice) {
-  return getHistorique()
+  return getSeancesRealisees()
     .flatMap((seance) => (seance.exercices || []).filter((exercice) => exercice.nom === nomExercice && !exercice.passe).map((exercice) => ({ exercice, date: new Date(seance.date) })))
     .slice(-5)
     .reverse();
@@ -1641,7 +1647,7 @@ function renderDay(day, brouillon = null) {
         charge: performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight),
         repetitions: performanceDeDepart?.repetitions ?? "",
       }));
-    seriesInitiales.forEach((serie) => ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir, serie.terminee));
+    seriesInitiales.forEach((serie) => ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir, Boolean(ancienExercice?.termine) && serie.terminee));
     if (ancienExercice?.termine) {
       card.querySelector(".exercise-card").classList.add("completed");
       card.querySelector(".complete-exercise").textContent = "Modifier l’exercice";
@@ -1787,7 +1793,25 @@ function renderDay(day, brouillon = null) {
     ".session-comment",
   );
   bilan.querySelectorAll("select").forEach((select) => select.addEventListener("change", () => sauvegarderSeanceEnCours(day, session)));
+  if (day !== SEANCE_LIBRE_JOUR) workout.insertAdjacentHTML("beforeend", "<button id='skip-workout-button' class='skip-workout-button'>Passer toute la séance</button>");
   workout.insertAdjacentHTML("beforeend", "<button id='finish-button' class='finish-button'>Terminer la séance</button>");
+  workout.querySelector("#skip-workout-button")?.addEventListener("click", () => {
+    const raison = prompt("Pourquoi passes-tu cette séance ? (facultatif)", "");
+    if (raison === null) return;
+    if (!confirm(`Passer « ${session.title} » ? Elle apparaîtra dans l’historique, mais ne comptera pas dans les statistiques.`)) return;
+    const historique = getHistorique();
+    historique.push({
+      id: Date.now(), date: new Date().toISOString(), programmeId: programmeActif?.id || null,
+      programme: programmeActif?.nom || null, jour: day, nom: session.title,
+      volume: 0, dureeSecondes: 0, exercices: [], seanceIgnoree: true,
+      raisonPassageSeance: raison.trim(),
+    });
+    localStorage.setItem("historique", JSON.stringify(historique));
+    localStorage.removeItem(DRAFT_KEY);
+    draftPanel.classList.add("hidden");
+    alert("Séance passée. Elle ne comptera pas dans tes statistiques.");
+    renderDay(day);
+  });
   workout.querySelector("#finish-button").addEventListener("click", () => {
     const progress = updateSessionProgress();
     const exercicesNonTermines = [...workout.querySelectorAll(".exercise-card")]
