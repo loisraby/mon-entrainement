@@ -4,11 +4,6 @@ const PROGRAMMES_KEY = "programmes_entrainement_v1";
 const PROGRAMME_ACTIF_KEY = "programme_actif_v1";
 const NOTES_EXERCICES_KEY = "notes_exercices_v1";
 const MESURES_KEY = "mesures_corporelles_v1";
-const MESURES_HISTORIQUES_KEY = "mesures_historiques_importees_v1";
-const MESURES_HISTORIQUES = [
-  ["2025-04-14T11:50:00",80],["2025-04-16T10:12:00",80.1],["2025-04-16T10:12:00",80.9],["2025-04-16T19:57:00",80.2],["2025-04-24T12:02:00",79.9],["2025-04-25T09:13:00",80.45],
-  ["2026-03-08T00:04:00",84.4],["2026-03-22T12:27:00",84.6],["2026-03-24T20:11:00",84.6],["2026-03-26T22:01:00",86],["2026-03-28T11:50:00",84],["2026-04-19T18:40:00",82.4],["2026-04-20T18:33:00",82.5],["2026-04-21T19:51:00",82.3],["2026-04-22T16:03:00",81.9],["2026-04-24T18:24:00",80.6],["2026-04-25T10:58:00",80.9],["2026-04-27T07:55:00",81.4],["2026-05-08T13:21:00",81.4],["2026-05-12T20:34:00",80.6],["2026-05-27T15:52:00",80.7],["2026-06-04T10:11:00",81.9],["2026-06-05T21:31:00",82.1],["2026-06-09T07:08:00",81.7],["2026-06-09T20:08:00",81.3],["2026-06-12T07:26:00",81],["2026-06-13T09:40:00",81.1],["2026-06-13T09:50:00",80.8],["2026-07-06T19:50:00",77.3],["2026-07-09T08:30:00",77.3],["2026-07-24T07:15:00",77.6],["2026-07-24T20:01:00",77.4],["2026-07-27T10:42:00",77.2],["2026-07-30T20:57:00",76.5],["2026-08-05T08:47:00",77.8],["2026-08-14T13:59:00",77.8],["2026-08-14T13:59:00",77.2],["2026-08-18T08:58:00",77.7],["2026-08-19T07:49:00",77.3],["2026-09-05T07:27:00",78.3],["2026-09-09T07:25:00",77.9],["2026-09-10T09:10:00",78.5],
-].map(([date, poids]) => ({ date, poids, taille: null, source: "historique" }));
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
 const SEANCE_LIBRE_JOUR = "__libre__";
@@ -84,6 +79,7 @@ document.querySelector("#stats-button").addEventListener("click", () => afficher
 document.querySelector("#analysis-button").addEventListener("click", () => afficherAnalyse());
 document.querySelector("#programs-button").addEventListener("click", () => afficherProgrammes());
 document.querySelector("#free-workout-button").addEventListener("click", commencerSeanceLibre);
+document.querySelector("#create-empty-program").addEventListener("click", creerProgrammeVide);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
 document.querySelector("#create-strength-program").addEventListener("click", creerProgrammeForce);
 document.querySelector("#edit-program").addEventListener("click", ouvrirEditeurProgramme);
@@ -103,15 +99,8 @@ function getSeancesRealisees() {
 
 function getMesures() {
   try {
-    const mesures = JSON.parse(localStorage.getItem(MESURES_KEY) || "[]");
-    if (!localStorage.getItem(MESURES_HISTORIQUES_KEY)) {
-      const fusion = [...mesures, ...MESURES_HISTORIQUES.filter((historique) => !mesures.some((mesure) => mesure.date === historique.date && Number(mesure.poids) === historique.poids))]
-        .sort((a, b) => new Date(a.date) - new Date(b.date));
-      localStorage.setItem(MESURES_KEY, JSON.stringify(fusion));
-      localStorage.setItem(MESURES_HISTORIQUES_KEY, "oui");
-      return fusion;
-    }
-    return mesures.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return JSON.parse(localStorage.getItem(MESURES_KEY) || "[]")
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
   } catch { return []; }
 }
 
@@ -1118,7 +1107,7 @@ function afficherProgrammes() {
       afficherProgrammes();
     });
     actions.append(bouton);
-    if (programme.id !== "hypertrophie") {
+    if (getProgrammes().length > 1) {
       const supprimer = document.createElement("button");
       supprimer.className = "delete-program";
       supprimer.textContent = "Supprimer";
@@ -1147,6 +1136,22 @@ function copierProgrammeActif() {
   activerProgramme(copie.id);
   programsPanel.classList.add("hidden");
   afficherProgrammes();
+}
+
+function creerProgrammeVide() {
+  const nom = prompt("Nom de ton programme :", "Mon programme");
+  if (!nom?.trim()) return;
+  const programmes = getProgrammes().filter((programme) => programme.id !== "hypertrophie");
+  const programme = { id: `programme-${Date.now()}`, nom: nom.trim(), seances: {} };
+  programmes.push(programme);
+  sauvegarderProgrammes(programmes);
+
+  const mesuresSansModele = getMesures().filter((mesure) => mesure.source !== "historique");
+  localStorage.setItem(MESURES_KEY, JSON.stringify(mesuresSansModele));
+
+  activerProgramme(programme.id, false);
+  alert("Programme vierge créé. Ajoute maintenant tes séances et tes exercices.");
+  ouvrirEditeurProgramme();
 }
 
 function creerProgrammeForce() {
@@ -1180,7 +1185,7 @@ function creerProgrammeForce() {
 function supprimerProgramme(id) {
   const programmes = getProgrammes();
   const programme = programmes.find((item) => item.id === id);
-  if (!programme || programme.id === "hypertrophie") return;
+  if (!programme || programmes.length <= 1) return;
   if (!confirm(`Supprimer le programme « ${programme.nom} » ? Les séances déjà enregistrées dans l’historique ne seront pas supprimées.`)) return;
   const restants = programmes.filter((item) => item.id !== id);
   sauvegarderProgrammes(restants);
@@ -1384,7 +1389,7 @@ async function chargerProgramme() {
   const programmeSource = await reponse.json();
   let programmes = getProgrammes();
   if (programmes.length === 0) {
-    programmes = [{ id: "hypertrophie", nom: "Hypertrophie", seances: programmeSource.seances }];
+    programmes = [{ id: "demarrage", nom: "Mon programme", seances: programmeSource.seances || {} }];
     sauvegarderProgrammes(programmes);
   }
   const idActif = localStorage.getItem(PROGRAMME_ACTIF_KEY);
