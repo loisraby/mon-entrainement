@@ -14,30 +14,27 @@
         <p class="eyebrow">MON ENTRAÎNEMENT</p>
         <h1 id="date-title">Aujourd'hui</h1>
         <p id="date-subtitle" class="muted"></p>
-        <button id="history-button" class="history-button">
-          Voir l’historique
+        <button id="tools-button" class="tools-button" type="button" aria-expanded="false">
+          <span>☰ Outils & réglages</span><span class="tools-chevron">⌄</span>
         </button>
-        <button id="stats-button" class="history-button">
-          Voir les statistiques
-        </button>
-        <button id="analysis-button" class="history-button">
-          Analyser ma progression
-        </button>
-        <button id="programs-button" class="history-button">
-          Mes programmes
-        </button>
-        <button id="free-workout-button" class="history-button">
-          Séance libre / cabinet
-        </button>
-        <div class="backup-actions">
-          <button id="export-button" class="backup-button">Sauvegarder mes données</button>
-          <label class="backup-button import-label">
-            Restaurer une sauvegarde
-            <input id="import-input" type="file" accept="application/json" />
-          </label>
+        <div id="tools-panel" class="tools-panel hidden">
+          <div class="tools-grid">
+            <button id="history-button" class="history-button">Historique</button>
+            <button id="stats-button" class="history-button">Statistiques</button>
+            <button id="analysis-button" class="history-button">Analyser ma progression</button>
+            <button id="programs-button" class="history-button">Mes programmes</button>
+            <button id="free-workout-button" class="history-button">Séance libre / cabinet</button>
+          </div>
+          <div class="backup-actions">
+            <button id="export-button" class="backup-button">Sauvegarder mes données</button>
+            <label class="backup-button import-label">
+              Restaurer une sauvegarde
+              <input id="import-input" type="file" accept="application/json" />
+            </label>
+          </div>
+          <p class="backup-hint muted">Garde ce fichier : il contient tes séances, programmes, notes et semaine légère pour un autre appareil.</p>
+          <p id="backup-status" class="backup-hint muted">Aucune sauvegarde téléchargée sur cet appareil.</p>
         </div>
-        <p class="backup-hint muted">Garde ce fichier : il contient tes séances, programmes, notes et semaine légère pour un autre appareil.</p>
-        <p id="backup-status" class="backup-hint muted">Aucune sauvegarde téléchargée sur cet appareil.</p>
       </header>
 
       <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>

@@ -472,3 +472,38 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
   transform: rotate(-45deg);
   white-space: nowrap;
 }
+
+header { padding-bottom: 2px; }
+.tools-button { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; color: var(--text); cursor: pointer; display: flex; font: inherit; font-size: .9rem; font-weight: 800; justify-content: space-between; margin-top: 16px; padding: 12px 14px; width: 100%; }
+.tools-button[aria-expanded="true"] { border-color: var(--blue); }
+.tools-chevron { color: var(--green); font-size: 1.15rem; transition: transform .18s ease; }
+.tools-button[aria-expanded="true"] .tools-chevron { transform: rotate(180deg); }
+.tools-panel { background: rgba(37, 44, 47, .52); border: 1px solid var(--line); border-radius: 16px; margin-top: 8px; padding: 12px; }
+.tools-grid { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.tools-grid .history-button { margin: 0; text-align: left; width: 100%; }
+.tools-grid #analysis-button, .tools-grid #free-workout-button { grid-column: 1 / -1; }
+.tools-grid #free-workout-button { background: rgba(46, 199, 154, .1); border-color: rgba(46, 199, 154, .45); color: var(--green); }
+.stats-grid { gap: 10px; }
+.stat-card { background: linear-gradient(145deg, #293235, var(--surface-2)); border: 1px solid rgba(174, 182, 180, .1); border-radius: 14px; padding: 13px; }
+.history-panel h3 { font-size: 1rem; margin: 28px 0 10px; }
+.history-panel h4 { color: var(--muted); font-size: .82rem; letter-spacing: .04em; margin: 20px 0 8px; text-transform: uppercase; }
+.weekly-chart { background: linear-gradient(to top, rgba(75, 147, 255, .08), transparent); border-radius: 12px 12px 0 0; height: 160px; padding: 10px 8px 0; }
+.week-bar { background: linear-gradient(to top, var(--blue), #82b5ff); border-radius: 6px 6px 0 0; box-shadow: 0 0 14px rgba(75, 147, 255, .22); }
+.measure-chart { background: linear-gradient(to bottom, rgba(46, 199, 154, .08), transparent); border: 1px solid rgba(174, 182, 180, .1); border-radius: 14px; margin: 10px 0 20px; padding: 10px; }
+.line-chart { display: grid; gap: 6px; grid-template-columns: auto 1fr; }
+.line-chart svg { height: 150px; overflow: visible; width: 100%; }
+.chart-scale { color: var(--muted); display: flex; flex-direction: column; font-size: .68rem; justify-content: space-between; padding: 8px 0 24px; }
+.chart-grid-line { stroke: rgba(174, 182, 180, .22); stroke-dasharray: 4 4; }
+.measure-line { fill: none; stroke: var(--green); stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.measure-dot { fill: var(--surface); stroke: #74e4c4; stroke-width: 3; }
+.chart-dates { align-items: center; color: var(--muted); display: flex; font-size: .7rem; grid-column: 2; justify-content: space-between; }
+.chart-dates strong { color: var(--green); font-size: .82rem; }
+.nutrition-section { background: linear-gradient(135deg, rgba(75, 147, 255, .13), rgba(46, 199, 154, .08)); border: 1px solid rgba(75, 147, 255, .28); border-radius: 16px; margin: 26px 0 6px; padding: 14px; }
+.section-heading { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.section-heading h3 { margin: 2px 0 0; }
+.section-kicker { color: var(--blue); font-size: .66rem; font-weight: 800; letter-spacing: .1em; margin: 0; }
+.nutrition-value { background: rgba(46, 199, 154, .13); border-radius: 999px; color: var(--green); font-size: .82rem; font-weight: 800; padding: 7px 9px; white-space: nowrap; }
+.nutrition-section .muted { font-size: .82rem; line-height: 1.4; }
+.nutrition-form { align-items: end; display: grid; gap: 8px; grid-template-columns: 1fr auto; }
+.nutrition-form .backup-button { min-height: 41px; }
+.measurement-actions { display: flex; flex-wrap: wrap; gap: 8px; }

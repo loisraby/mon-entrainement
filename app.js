@@ -4,6 +4,8 @@ const PROGRAMMES_KEY = "programmes_entrainement_v1";
 const PROGRAMME_ACTIF_KEY = "programme_actif_v1";
 const NOTES_EXERCICES_KEY = "notes_exercices_v1";
 const MESURES_KEY = "mesures_corporelles_v1";
+const OBJECTIF_CALORIES_KEY = "objectif_calories_v1";
+const MENSURATIONS_CONFIG_KEY = "mensurations_config_v1";
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
 const SEANCE_LIBRE_JOUR = "__libre__";
@@ -72,8 +74,15 @@ const programEditor = document.querySelector("#program-editor");
 let jourEdite = "Lun";
 const draftPanel = document.querySelector("#draft-panel");
 const draftMessage = document.querySelector("#draft-message");
+const toolsButton = document.querySelector("#tools-button");
+const toolsPanel = document.querySelector("#tools-panel");
 const todayIndex = (new Date().getDay() + 6) % 7;
 
+toolsButton.addEventListener("click", () => {
+  const estOuvert = !toolsPanel.classList.contains("hidden");
+  toolsPanel.classList.toggle("hidden", estOuvert);
+  toolsButton.setAttribute("aria-expanded", String(!estOuvert));
+});
 document.querySelector("#history-button").addEventListener("click", () => afficherHistorique());
 document.querySelector("#stats-button").addEventListener("click", () => afficherStatistiques());
 document.querySelector("#analysis-button").addEventListener("click", () => afficherAnalyse());
@@ -102,6 +111,55 @@ function getMesures() {
     return JSON.parse(localStorage.getItem(MESURES_KEY) || "[]")
       .sort((a, b) => new Date(a.date) - new Date(b.date));
   } catch { return []; }
+}
+
+function getObjectifCalories() {
+  const calories = Number(localStorage.getItem(OBJECTIF_CALORIES_KEY));
+  return Number.isFinite(calories) && calories > 0 ? calories : null;
+}
+
+function getMensurationsConfigurees() {
+  try {
+    const mensurations = JSON.parse(localStorage.getItem(MENSURATIONS_CONFIG_KEY) || "[]");
+    return Array.isArray(mensurations) ? mensurations.filter((mensuration) => mensuration?.id && mensuration?.nom) : [];
+  } catch { return []; }
+}
+
+function valeurMensuration(mesure, cle) {
+  return cle === "taille" ? Number(mesure.taille) : Number(mesure.mensurations?.[cle]);
+}
+
+function formaterMensurations(mesure) {
+  const valeurs = [];
+  if (Number(mesure.taille) > 0) valeurs.push(`taille ${mesure.taille} cm`);
+  getMensurationsConfigurees().forEach(({ id, nom }) => {
+    const valeur = valeurMensuration(mesure, id);
+    if (valeur > 0) valeurs.push(`${nom.toLowerCase()} ${valeur} cm`);
+  });
+  return valeurs.join(" · ");
+}
+
+function carteNutrition() {
+  const objectif = getObjectifCalories();
+  return `<section class="stats-section nutrition-section">
+    <div class="section-heading"><div><p class="section-kicker">NUTRITION</p><h3>Repère quotidien</h3></div><span class="nutrition-value">${objectif ? `${objectif} kcal` : "À définir"}</span></div>
+    <p class="muted">À renseigner après le bilan : c’est un objectif personnel, enregistré seulement sur cet appareil.</p>
+    <div class="nutrition-form"><label>Calories à viser par jour<input id="calorie-target" type="number" min="1" step="1" inputmode="numeric" placeholder="Ex. 2 300" value="${objectif || ""}"></label><button id="save-calorie-target" class="backup-button" type="button">Enregistrer</button></div>
+  </section>`;
+}
+
+function initialiserNutrition() {
+  const bouton = statsContent.querySelector("#save-calorie-target");
+  if (!bouton) return;
+  bouton.addEventListener("click", () => {
+    const calories = Number(statsContent.querySelector("#calorie-target").value);
+    if (!Number.isFinite(calories) || calories <= 0) {
+      alert("Entre un objectif calorique valide, ou laisse le champ vide tant que le bilan n’est pas fait.");
+      return;
+    }
+    localStorage.setItem(OBJECTIF_CALORIES_KEY, String(Math.round(calories)));
+    afficherStatistiques(true);
+  });
 }
 
 function moyennePoids7Jours(mesures) {
@@ -753,18 +811,22 @@ function creerGraphiqueHebdomadaire(volumesParSemaine) {
 }
 
 function creerGraphiqueMesure(mesures, cle, unite) {
-  const valeurs = mesures.filter((mesure) => Number(mesure[cle]) > 0).slice(-12);
+  const valeurs = mesures.filter((mesure) => valeurMensuration(mesure, cle) > 0).slice(-12);
   if (valeurs.length < 2) return "<p class='muted'>Ajoute au moins deux mesures pour voir une évolution.</p>";
-  const nombres = valeurs.map((mesure) => Number(mesure[cle]));
+  const nombres = valeurs.map((mesure) => valeurMensuration(mesure, cle));
   const min = Math.min(...nombres);
   const max = Math.max(...nombres);
   const ecart = max - min || 1;
-  return `<div class="measure-chart">${valeurs.map((mesure) => {
-    const valeur = Number(mesure[cle]);
-    const hauteur = 20 + ((valeur - min) / ecart) * 80;
-    const date = new Date(mesure.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
-    return `<div class="measure-bar-wrap"><span>${valeur} ${unite}</span><div class="measure-bar" style="height:${hauteur}%" title="${date} : ${valeur} ${unite}"></div><small>${date}</small></div>`;
-  }).join("")}</div>`;
+  const largeur = 320;
+  const hauteur = 150;
+  const marge = 18;
+  const points = valeurs.map((mesure, index) => {
+    const valeur = valeurMensuration(mesure, cle);
+    const x = marge + (index / (valeurs.length - 1)) * (largeur - marge * 2);
+    const y = hauteur - marge - ((valeur - min) / ecart) * (hauteur - marge * 2);
+    return { x, y, valeur, date: new Date(mesure.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) };
+  });
+  return `<div class="measure-chart line-chart"><div class="chart-scale"><span>${max.toFixed(1).replace(".", ",")} ${unite}</span><span>${min.toFixed(1).replace(".", ",")} ${unite}</span></div><svg viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Évolution de la mensuration"><line class="chart-grid-line" x1="${marge}" y1="${marge}" x2="${largeur - marge}" y2="${marge}"></line><line class="chart-grid-line" x1="${marge}" y1="${hauteur - marge}" x2="${largeur - marge}" y2="${hauteur - marge}"></line><polyline class="measure-line" points="${points.map((point) => `${point.x},${point.y}`).join(" ")}"></polyline>${points.map((point) => `<circle class="measure-dot" cx="${point.x}" cy="${point.y}" r="4"><title>${point.date} : ${point.valeur} ${unite}</title></circle>`).join("")}</svg><div class="chart-dates"><span>${points[0].date}</span><strong>${points.at(-1).valeur} ${unite}</strong><span>${points.at(-1).date}</span></div></div>`;
 }
 
 function afficherProgressionExercice(nomExercice, historique, zone) {
@@ -822,7 +884,8 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
     ? historiqueComplet
     : historiqueComplet.filter((seance) => (seance.programmeId || seance.programme || "sans-programme") === programmeFiltre);
   if (historique.length === 0) {
-    statsContent.innerHTML = "<p class='muted'>Enregistre une première séance pour voir tes statistiques.</p>";
+    statsContent.innerHTML = `${carteNutrition()}<p class='muted'>Enregistre une première séance pour voir les statistiques d’entraînement. Les objectifs nutritionnels sont déjà disponibles ici.</p>`;
+    initialiserNutrition();
   } else {
     const now = new Date();
     const startOfWeek = debutSemaine(now);
@@ -921,8 +984,13 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
     const evolutionsMesures = [evolutionMesure("poids", "kg"), evolutionMesure("taille", "cm")].filter(Boolean).join(" · ");
     const graphiquePoids = creerGraphiqueMesure(mesures, "poids", "kg");
     const graphiqueTaille = creerGraphiqueMesure(mesures, "taille", "cm");
+    const mensurationsConfigurees = getMensurationsConfigurees();
+    const graphiquesMensurations = mensurationsConfigurees.map(({ id, nom }) => `
+      <h4>Évolution — ${nom}</h4>
+      ${creerGraphiqueMesure(mesures, id, "cm")}
+    `).join("");
     const mesuresRecentes = mesures.map((mesure, index) => ({ mesure, index })).slice(-5).reverse()
-      .map(({ mesure, index }) => `<li>${new Date(mesure.date).toLocaleDateString("fr-FR")}<strong>${mesure.poids ? `${mesure.poids} kg` : "—"}${mesure.taille ? ` · taille ${mesure.taille} cm` : ""}</strong><button class="delete-measure" data-index="${index}" aria-label="Supprimer cette mesure">×</button></li>`).join("");
+      .map(({ mesure, index }) => `<li>${new Date(mesure.date).toLocaleDateString("fr-FR")}<strong>${mesure.poids ? `${mesure.poids} kg` : "—"}${formaterMensurations(mesure) ? ` · ${formaterMensurations(mesure)}` : ""}</strong><button class="delete-measure" data-index="${index}" aria-label="Supprimer cette mesure">×</button></li>`).join("");
     const seancesRecentes = historique.slice(-5);
     const valeursRenseignees = (valeurs) => valeurs
       .filter((valeur) => valeur !== null && valeur !== undefined && valeur !== "")
@@ -988,8 +1056,9 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
         <article class="stat-card"><span>RIR moyen</span><strong>${formatMoyenne(rirMoyen)}</strong></article>
       </div>
       <p class="recovery-note">Sur les ${seancesRecentes.length} dernières séances : ${messageRecuperation}</p>
+      ${carteNutrition()}
       <h3>Poids et mensurations</h3>
-      <button id="add-measurement" class="backup-button">Ajouter une mesure</button>
+      <div class="measurement-actions"><button id="add-measurement" class="backup-button">Ajouter une mesure</button><button id="add-custom-measurement" class="backup-button">+ Mensuration à suivre</button></div>
       <p class="muted">Dernière mesure : ${derniereMesure ? `${derniereMesure.poids || "—"} kg${derniereMesure.taille ? ` · taille ${derniereMesure.taille} cm` : ""}` : "aucune"}</p>
       ${moyennePoids ? `<p class="muted">Tendance sur 7 jours : ${moyennePoids.toFixed(1).replace(".", ",")} kg · mesures prises le matin.</p>` : ""}
       ${evolutionsMesures ? `<p class="muted">Évolution depuis la première mesure : ${evolutionsMesures}</p>` : ""}
@@ -999,11 +1068,13 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
       ${graphiquePoids}
       <h4>Évolution du tour de taille</h4>
       ${graphiqueTaille}
+      ${graphiquesMensurations}
       <h3>Progression par exercice</h3>
       <select id="exercise-select" class="exercise-select">${optionsExercices}</select>
       <div id="exercise-progress"></div>
     `;
 
+    initialiserNutrition();
     const selectExercice = statsContent.querySelector("#exercise-select");
     const progression = statsContent.querySelector("#exercise-progress");
     const mettreAJourProgression = () =>
@@ -1015,9 +1086,24 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
     statsContent.querySelector("#add-measurement").addEventListener("click", () => {
       const poids = Number(prompt("Poids du jour en kg (facultatif) :", derniereMesure?.poids || ""));
       const taille = Number(prompt("Tour de taille en cm (facultatif) :", derniereMesure?.taille || ""));
-      if (!poids && !taille) return;
-      mesures.push({ date: new Date().toISOString(), poids: poids || null, taille: taille || null });
+      const mensurations = {};
+      mensurationsConfigurees.forEach(({ id, nom }) => {
+        const derniereValeur = valeurMensuration(derniereMesure || {}, id);
+        const valeur = Number(prompt(`${nom} en cm (facultatif) :`, derniereValeur || ""));
+        if (valeur > 0) mensurations[id] = valeur;
+      });
+      if (!poids && !taille && Object.keys(mensurations).length === 0) return;
+      mesures.push({ date: new Date().toISOString(), poids: poids || null, taille: taille || null, mensurations });
       localStorage.setItem(MESURES_KEY, JSON.stringify(mesures));
+      afficherStatistiques(true, programmeFiltre);
+    });
+    statsContent.querySelector("#add-custom-measurement").addEventListener("click", () => {
+      const nom = prompt("Mensuration à suivre (ex. Tour de biceps) :", "");
+      if (!nom?.trim()) return;
+      const mensurations = getMensurationsConfigurees();
+      const id = `mesure-${Date.now()}`;
+      mensurations.push({ id, nom: nom.trim() });
+      localStorage.setItem(MENSURATIONS_CONFIG_KEY, JSON.stringify(mensurations));
       afficherStatistiques(true, programmeFiltre);
     });
     statsContent.querySelectorAll(".delete-measure").forEach((button) => button.addEventListener("click", () => {
