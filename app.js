@@ -1848,9 +1848,14 @@ function renderDay(day, brouillon = null) {
 
     const performanceDeDepart = ancienExercice || dernierePerformance;
     const ancienneConventionDips = estExercicePoidsCorps(nomEffectif) && !performanceDeDepart?.poidsCorps;
+    const nombreSeriesVise = semaineLegere
+      ? Math.max(1, (Number(target.split(" ")[0]) || 3) - 1)
+      : (Number(target.split(" ")[0]) || 3);
     const seriesInitiales = performanceDeDepart?.seriesDetail?.length && !ancienneConventionDips
-      ? performanceDeDepart.seriesDetail
-      : Array.from({ length: semaineLegere ? Math.max(1, (Number(target.split(" ")[0]) || 3) - 1) : (Number(ancienExercice?.series || target.split(" ")[0]) || 3) }, () => ({
+      ? ancienExercice
+        ? performanceDeDepart.seriesDetail
+        : performanceDeDepart.seriesDetail.filter((serie, index, toutes) => serie.echauffement || toutes.slice(0, index + 1).filter((item) => !item.echauffement).length <= nombreSeriesVise)
+      : Array.from({ length: ancienExercice?.series || nombreSeriesVise }, () => ({
         charge: ancienneConventionDips ? 0 : (performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight)),
         repetitions: performanceDeDepart?.repetitions ?? "",
       }));
