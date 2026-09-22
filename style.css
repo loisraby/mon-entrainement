@@ -65,6 +65,9 @@ header { padding-bottom: 2px; }
 .target { color: var(--blue); font-weight: 800; white-space: nowrap; }
 
 .series-area { margin-top: 14px; }
+.bodyweight-area { background: rgba(75, 147, 255, .09); border: 1px solid rgba(75, 147, 255, .22); border-radius: 12px; margin-top: 14px; padding: 12px; }
+.bodyweight-area label { max-width: 180px; }
+.bodyweight-area .muted { font-size: .8rem; line-height: 1.4; margin: 8px 0 0; }
 .series-row { align-items: end; display: grid; gap: 8px; grid-template-columns: 54px 1fr 1fr 1fr; margin-top: 8px; }
 .warmup-toggle { align-items: center; display: flex; gap: 5px; grid-column: 2 / -1; }
 .warmup-toggle input { width: auto; }
@@ -130,6 +133,7 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 }
 
 .exercise-card.completed .series-area,
+.exercise-card.completed .bodyweight-area,
 .exercise-card.completed .volume,
 .exercise-card.completed .rest-actions,
 .exercise-card.completed .exercise-note,
@@ -428,6 +432,10 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 .nutrition-section .muted { font-size: .82rem; line-height: 1.4; }
 .nutrition-form { align-items: end; display: grid; gap: 8px; grid-template-columns: 1fr auto; }
 .nutrition-form .backup-button { min-height: 41px; }
+.nutrition-profile { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); margin: 15px 0; }
+.nutrition-result { line-height: 1.6; margin: 12px 0; }
+.nutrition-result strong { color: var(--green); }
+.nutrition-result .backup-button { margin-top: 8px; }
 .measurement-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .exercise-select {

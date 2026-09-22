@@ -6,6 +6,7 @@ const NOTES_EXERCICES_KEY = "notes_exercices_v1";
 const MESURES_KEY = "mesures_corporelles_v1";
 const OBJECTIF_CALORIES_KEY = "objectif_calories_v1";
 const MENSURATIONS_CONFIG_KEY = "mensurations_config_v1";
+const PROFIL_NUTRITION_KEY = "profil_nutrition_v1";
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
 const SEANCE_LIBRE_JOUR = "__libre__";
@@ -126,7 +127,20 @@ function getMensurationsConfigurees() {
 }
 
 function valeurMensuration(mesure, cle) {
-  return cle === "taille" ? Number(mesure.taille) : Number(mesure.mensurations?.[cle]);
+  if (cle === "poids" || cle === "taille") return Number(mesure[cle]);
+  return Number(mesure.mensurations?.[cle]);
+}
+
+function dernierPoidsCorps() {
+  return [...getMesures()].reverse().find((mesure) => Number(mesure.poids) > 0)?.poids || null;
+}
+
+function estExercicePoidsCorps(nom) {
+  return /\bdips?\b/i.test(nom || "");
+}
+
+function objectifAuMaximum(objectif) {
+  return /\bmax\b|échec/i.test(String(objectif || ""));
 }
 
 function formaterMensurations(mesure) {
@@ -141,16 +155,63 @@ function formaterMensurations(mesure) {
 
 function carteNutrition() {
   const objectif = getObjectifCalories();
+  let profil = {};
+  try { profil = JSON.parse(localStorage.getItem(PROFIL_NUTRITION_KEY) || "{}"); } catch {}
+  const poids = dernierPoidsCorps() || profil.poids || "";
+  const selection = (valeur, attendue) => valeur === attendue ? " selected" : "";
   return `<section class="stats-section nutrition-section">
     <div class="section-heading"><div><p class="section-kicker">NUTRITION</p><h3>Repère quotidien</h3></div><span class="nutrition-value">${objectif ? `${objectif} kcal` : "À définir"}</span></div>
-    <p class="muted">À renseigner après le bilan : c’est un objectif personnel, enregistré seulement sur cet appareil.</p>
+    <p class="muted">Estimation indicative pour adulte, à ajuster selon l’évolution du poids, l’appétit et le bilan personnel. Données conservées sur cet appareil.</p>
+    <div class="nutrition-profile">
+      <label>Poids actuel (kg)<input id="nutrition-weight" type="number" min="30" max="300" step="0.1" inputmode="decimal" value="${poids}"></label>
+      <label>Taille (cm)<input id="nutrition-height" type="number" min="120" max="230" step="1" inputmode="numeric" value="${profil.tailleCm || ""}"></label>
+      <label>Âge (ans)<input id="nutrition-age" type="number" min="18" max="100" step="1" inputmode="numeric" value="${profil.age || ""}"></label>
+      <label>Équation métabolique<select id="nutrition-equation"><option value="">Choisir…</option><option value="homme"${selection(profil.equation, "homme")}>Formule homme</option><option value="femme"${selection(profil.equation, "femme")}>Formule femme</option></select></label>
+      <label>Activité globale (sport inclus)<select id="nutrition-activity"><option value="">Choisir…</option><option value="1.2"${selection(profil.activite, "1.2")}>Peu actif</option><option value="1.375"${selection(profil.activite, "1.375")}>Un peu actif</option><option value="1.55"${selection(profil.activite, "1.55")}>Actif</option><option value="1.725"${selection(profil.activite, "1.725")}>Très actif</option></select></label>
+      <label>Objectif<select id="nutrition-goal"><option value="maintien"${selection(profil.objectif, "maintien")}>Maintien</option><option value="muscle"${selection(profil.objectif, "muscle")}>Prise de muscle</option><option value="seche"${selection(profil.objectif, "seche")}>Sèche progressive</option></select></label>
+    </div>
+    <button id="calculate-nutrition" class="backup-button" type="button">Estimer calories et macros</button>
+    <div id="nutrition-result" class="nutrition-result" aria-live="polite"></div>
+    <p class="muted">Le poids provient de ta dernière pesée, mais tu peux le corriger ici. La formule et le niveau d’activité restent des approximations ; non adapté à une grossesse ou aux moins de 18 ans.</p>
     <div class="nutrition-form"><label>Calories à viser par jour<input id="calorie-target" type="number" min="1" step="1" inputmode="numeric" placeholder="Ex. 2 300" value="${objectif || ""}"></label><button id="save-calorie-target" class="backup-button" type="button">Enregistrer</button></div>
   </section>`;
+}
+
+function estimerNutrition({ poids, tailleCm, age, equation, activite, objectif }) {
+  const repos = 10 * poids + 6.25 * tailleCm - 5 * age + (equation === "femme" ? -161 : 5);
+  const maintien = repos * Number(activite);
+  const calories = Math.round((maintien + (objectif === "muscle" ? 200 : objectif === "seche" ? -300 : 0)) / 10) * 10;
+  const proteines = Math.round(1.8 * poids);
+  const lipides = Math.round(calories * 0.25 / 9);
+  const glucides = Math.round((calories - 4 * proteines - 9 * lipides) / 4);
+  return { calories, proteines, lipides, glucides, maintien: Math.round(maintien / 10) * 10 };
 }
 
 function initialiserNutrition() {
   const bouton = statsContent.querySelector("#save-calorie-target");
   if (!bouton) return;
+  statsContent.querySelector("#calculate-nutrition").addEventListener("click", () => {
+    const profil = {
+      poids: Number(statsContent.querySelector("#nutrition-weight").value),
+      tailleCm: Number(statsContent.querySelector("#nutrition-height").value),
+      age: Number(statsContent.querySelector("#nutrition-age").value),
+      equation: statsContent.querySelector("#nutrition-equation").value,
+      activite: statsContent.querySelector("#nutrition-activity").value,
+      objectif: statsContent.querySelector("#nutrition-goal").value,
+    };
+    const resultat = statsContent.querySelector("#nutrition-result");
+    if (!(profil.poids >= 30 && profil.poids <= 300 && profil.tailleCm >= 120 && profil.tailleCm <= 230 && profil.age >= 18 && profil.age <= 100 && profil.equation && profil.activite)) {
+      resultat.textContent = "Renseigne un poids, une taille et un âge adultes valides, puis choisis la formule et l’activité.";
+      return;
+    }
+    const estimation = estimerNutrition(profil);
+    localStorage.setItem(PROFIL_NUTRITION_KEY, JSON.stringify(profil));
+    resultat.innerHTML = `<strong>Repère : environ ${estimation.calories.toLocaleString("fr-FR")} kcal/jour</strong><br>Protéines ${estimation.proteines} g · Lipides ${estimation.lipides} g · Glucides ${estimation.glucides} g<br><small>Maintien estimé : ${estimation.maintien.toLocaleString("fr-FR")} kcal. Les macros sont des repères, pas des seuils obligatoires.</small><br><button id="use-estimated-calories" class="backup-button" type="button">Utiliser ce repère</button>`;
+    resultat.querySelector("#use-estimated-calories").addEventListener("click", () => {
+      localStorage.setItem(OBJECTIF_CALORIES_KEY, String(estimation.calories));
+      afficherStatistiques(true);
+    });
+  });
   bouton.addEventListener("click", () => {
     const calories = Number(statsContent.querySelector("#calorie-target").value);
     if (!Number.isFinite(calories) || calories <= 0) {
@@ -234,6 +295,9 @@ function conseilProgression(performance, objectif, nomExercice = "") {
   if (!seriesTravail.length) return "Note les reps de tes séries pour obtenir une recommandation précise.";
   const dernierRir = seriesTravail.at(-1)?.rir ?? performance.rir;
   const charge = Math.max(...seriesTravail.map((serie) => Number(serie.charge) || 0));
+  const chargeTexte = estExercicePoidsCorps(nomExercice) && performance.poidsCorps
+    ? `PDC ${charge >= 0 ? "+" : "−"}${Math.abs(charge).toLocaleString("fr-FR")} kg`
+    : `${formatKg(charge)} kg`;
   const total = totalRepetitions(performance);
   const haut = hautDeFourchette(objectif);
   const bas = basDeFourchette(objectif);
@@ -249,18 +313,22 @@ function conseilProgression(performance, objectif, nomExercice = "") {
   const tendance = passagesMemeCharge.length >= 3
     ? ` Sur cette charge, tes totaux récents sont ${passagesMemeCharge.slice().reverse().map(({ exercice }) => totalRepetitions(exercice)).join(" → ")} reps.`
     : "";
+  if (objectifAuMaximum(objectif)) return `Séries au maximum : un ressenti difficile est attendu. Avec ${chargeTexte}, compare surtout tes répétitions et la qualité du mouvement (${total} reps la dernière fois).${tendance}`;
   if (hautAtteint && Number(dernierRir) >= 2) return `Monte légèrement au prochain palier. Repars vers ${bas || Math.max(1, haut - 3)} reps par série (${(bas || Math.max(1, haut - 3)) * nombreSeries} reps au total) en gardant au moins RIR 1–2.`;
-  if (performance.ressenti === "galere" || Number(dernierRir) === 0) return `Garde ${formatKg(charge)} kg : objectif, reproduire au moins ${seriesTravail.map((serie) => serie.repetitions).join(" / ")} reps propres (${total} au total) avant de chercher +1 rep.${tendance}`;
-  if (bas && seriesTravail.some((serie) => Number(serie.repetitions) < bas)) return `Garde ${formatKg(charge)} kg et vise d’abord ${bas} reps par série (${bas * nombreSeries} au total). Prochaine cible réaliste : ${cibleSeries} reps.${tendance}`;
-  if (Number(dernierRir) >= 3 || performance.ressenti === "facile") return `Garde ${formatKg(charge)} kg et vise ${cibleSeries} reps (${total + 1} au total). Tu avais de la marge, donc cette progression est raisonnable.${tendance}`;
-  return `Garde ${formatKg(charge)} kg et vise ${cibleSeries} reps (${total + 1} au total), si la forme reste propre.${tendance}`;
+  if (performance.ressenti === "galere" || Number(dernierRir) === 0) return `Garde ${chargeTexte} : objectif, reproduire au moins ${seriesTravail.map((serie) => serie.repetitions).join(" / ")} reps propres (${total} au total) avant de chercher +1 rep.${tendance}`;
+  if (bas && seriesTravail.some((serie) => Number(serie.repetitions) < bas)) return `Garde ${chargeTexte} et vise d’abord ${bas} reps par série (${bas * nombreSeries} au total). Prochaine cible réaliste : ${cibleSeries} reps.${tendance}`;
+  if (Number(dernierRir) >= 3 || performance.ressenti === "facile") return `Garde ${chargeTexte} et vise ${cibleSeries} reps (${total + 1} au total). Tu avais de la marge, donc cette progression est raisonnable.${tendance}`;
+  return `Garde ${chargeTexte} et vise ${cibleSeries} reps (${total + 1} au total), si la forme reste propre.${tendance}`;
 }
 
 function resumeSeries(performance) {
   const seriesTravail = performance.seriesDetail?.filter((serie) => !serie.echauffement);
+  const libelleCharge = (charge) => estExercicePoidsCorps(performance.nom) && performance.poidsCorps
+    ? `PDC ${performance.poidsCorps} kg ${charge >= 0 ? "+" : "−"}${Math.abs(charge)} kg`
+    : `${charge} kg`;
   return seriesTravail?.length
-    ? seriesTravail.map((serie) => `${serie.charge} kg × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null && serie.rir !== "" ? ` (RIR ${serie.rir})` : ""}`).join(" · ")
-    : `${performance.series} × ${performance.repetitions} à ${performance.charge} kg`;
+    ? seriesTravail.map((serie) => `${libelleCharge(serie.charge)} × ${serie.repetitions}${serie.rir !== undefined && serie.rir !== null && serie.rir !== "" ? ` (RIR ${serie.rir})` : ""}`).join(" · ")
+    : `${performance.series} × ${performance.repetitions} à ${libelleCharge(performance.charge)}`;
 }
 
 function configurerRessenti(zone, ressenti, commentaire, onChange, selecteurCommentaire = ".exercise-comment") {
@@ -380,13 +448,16 @@ function annulerSeanceEnCours() {
 
 function exporterHistorique() {
   const sauvegarde = {
-    version: 3,
+    version: 4,
     exporteeLe: new Date().toISOString(),
     historique: getHistorique(),
     programmes: getProgrammes(),
     programmeActif: localStorage.getItem(PROGRAMME_ACTIF_KEY),
     notesExercices: getNotesExercices(),
     mesures: getMesures(),
+    objectifCalories: getObjectifCalories(),
+    profilNutrition: JSON.parse(localStorage.getItem(PROFIL_NUTRITION_KEY) || "null"),
+    mensurationsConfigurees: getMensurationsConfigurees(),
     seanceEnCours: getSeanceEnCours(),
   };
   const fichier = new Blob([JSON.stringify(sauvegarde, null, 2)], {
@@ -424,6 +495,9 @@ function importerHistorique(event) {
         if (contenu.notesExercices && typeof contenu.notesExercices === "object") localStorage.setItem(NOTES_EXERCICES_KEY, JSON.stringify(contenu.notesExercices));
         else localStorage.removeItem(NOTES_EXERCICES_KEY);
         if (Array.isArray(contenu.mesures)) localStorage.setItem(MESURES_KEY, JSON.stringify(contenu.mesures));
+        if (Array.isArray(contenu.mensurationsConfigurees)) localStorage.setItem(MENSURATIONS_CONFIG_KEY, JSON.stringify(contenu.mensurationsConfigurees));
+        if (contenu.profilNutrition && typeof contenu.profilNutrition === "object") localStorage.setItem(PROFIL_NUTRITION_KEY, JSON.stringify(contenu.profilNutrition));
+        if (Number(contenu.objectifCalories) > 0) localStorage.setItem(OBJECTIF_CALORIES_KEY, String(contenu.objectifCalories));
         if (contenu.seanceEnCours && typeof contenu.seanceEnCours === "object") localStorage.setItem(DRAFT_KEY, JSON.stringify(contenu.seanceEnCours));
         else localStorage.removeItem(DRAFT_KEY);
       }
@@ -476,6 +550,11 @@ function debutSemaine(date) {
 
 function updateVolume(card) {
   const { volume, volumeAffiche, coefficientCharge } = lireExercice(card);
+  if (card.dataset.poidsCorpsActif === "true" && !(Number(card.querySelector(".bodyweight-input")?.value) > 0)) {
+    card.querySelector(".volume").textContent = "Renseigne ton poids du corps pour estimer le volume.";
+    updateTotalVolume();
+    return;
+  }
   const precision = coefficientCharge !== 1
     ? ` de référence (${formatKg(volumeAffiche)} kg affichés × ${coefficientCharge.toLocaleString("fr-FR")})`
     : "";
@@ -504,9 +583,13 @@ function lireExercice(card) {
   const coefficientSaisi = Number(card.dataset.chargeCoefficient);
   const coefficientCharge = Number.isFinite(coefficientSaisi) && coefficientSaisi > 0 ? coefficientSaisi : 1;
   const volumeAffiche = seriesTravail.reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
-  const volume = volumeAffiche * coefficientCharge;
-  const charge = Math.max(...seriesTravail.map((serie) => serie.charge), 0);
-  const chargeReference = charge * coefficientCharge;
+  const poidsCorpsActif = card.dataset.poidsCorpsActif === "true";
+  const poidsCorps = poidsCorpsActif ? Number(card.querySelector(".bodyweight-input")?.value) || null : null;
+  const volume = poidsCorpsActif
+    ? poidsCorps ? seriesTravail.reduce((total, serie) => total + Math.max(0, poidsCorps + serie.charge) * serie.repetitions, 0) : 0
+    : volumeAffiche * coefficientCharge;
+  const charge = seriesTravail.length ? Math.max(...seriesTravail.map((serie) => serie.charge)) : 0;
+  const chargeReference = poidsCorpsActif ? (poidsCorps ? Math.max(0, poidsCorps + charge) : null) : charge * coefficientCharge;
   const repetitions = seriesTravail.length
     ? Math.round((seriesTravail.reduce((total, serie) => total + serie.repetitions, 0) / seriesTravail.length) * 10) / 10
     : 0;
@@ -514,6 +597,7 @@ function lireExercice(card) {
   return {
     charge,
     chargeReference,
+    poidsCorps,
     coefficientCharge,
     series: seriesTravail.length,
     repetitions,
@@ -528,6 +612,20 @@ function lireExercice(card) {
 
 function nomSuperset(card) {
   return card.dataset.supersetWith || "";
+}
+
+function configurerPoidsCorps(card, nom, poidsConserve = null) {
+  const actif = estExercicePoidsCorps(nom);
+  card.dataset.poidsCorpsActif = String(actif);
+  const zone = card.querySelector(".bodyweight-area");
+  zone.classList.toggle("hidden", !actif);
+  card.dataset.chargeCoefficient = actif ? "1" : (card.dataset.originalChargeCoefficient || "1");
+  const champ = zone.querySelector(".bodyweight-input");
+  if (actif && !champ.value) champ.value = poidsConserve || dernierPoidsCorps() || "";
+  card.querySelectorAll(".set-weight").forEach((input) => {
+    input.min = actif ? "-300" : "0";
+    input.closest("label").firstChild.textContent = actif ? "Lest / aide (kg)" : "Charge (kg)";
+  });
 }
 
 function afficherSuperset(card) {
@@ -561,6 +659,10 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
   row.innerHTML = `<span class="series-number"></span><label>Charge (kg)<input class="set-weight" type="number" step="0.5" min="0"></label><label>Reps<input class="set-reps" type="number" step="1" min="0" max="100"></label><label>RIR<select class="set-rir"><option value="">—</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4+</option></select></label><label class="warmup-toggle"><input class="set-warmup" type="checkbox"> Échauff.</label><button class="set-done" type="button">${terminee ? "À refaire" : "✓ Série faite"}</button>`;
   row.querySelector(".series-number").textContent = echauffement ? "Échauff." : `Série ${list.children.length + 1}`;
   row.querySelector(".set-weight").value = charge;
+  if (card.dataset.poidsCorpsActif === "true") {
+    row.querySelector(".set-weight").min = "-300";
+    row.querySelector(".set-weight").closest("label").firstChild.textContent = "Lest / aide (kg)";
+  }
   row.querySelector(".set-reps").value = repetitions;
   row.querySelector(".set-warmup").checked = echauffement;
   row.querySelector(".set-rir").value = rir ?? "";
@@ -625,7 +727,7 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
       const rir = exercice.seriesDetail?.filter((serie) => !serie.echauffement).at(-1)?.rir ?? exercice.rir ?? null;
       const nomSuivi = exercice.programmeNom || exercice.nom;
       if (!performances.has(nomSuivi)) performances.set(nomSuivi, []);
-      performances.get(nomSuivi).push({ volume, rir, ressenti: exercice.ressenti, nomEffectue: exercice.nom, ordre, total: seance.exercices.length, energie: seance.energie, sommeil: seance.sommeil, semaineLegere: seance.semaineLegere });
+       performances.get(nomSuivi).push({ volume, rir, objectif: exercice.objectif || sessions[seance.jour]?.exercises.find(([nom]) => nom === nomSuivi)?.[1] || "", ressenti: exercice.ressenti, nomEffectue: exercice.nom, ordre, total: seance.exercices.length, energie: seance.energie, sommeil: seance.sommeil, semaineLegere: seance.semaineLegere });
     });
   });
   if (performances.size === 0) {
@@ -652,7 +754,9 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
       };
       const energieRecente = moyenneRecente("energie");
       const sommeilRecent = moyenneRecente("sommeil");
-      const rirRecent = moyenneRecente("rir");
+      const rirComparables = passagesRecents.filter((item) => !objectifAuMaximum(item.objectif));
+      const rirValeurs = rirComparables.map((item) => item.rir).filter((valeur) => valeur !== null && valeur !== undefined && valeur !== "").map(Number).filter(Number.isFinite);
+      const rirRecent = rirValeurs.length ? rirValeurs.reduce((total, valeur) => total + valeur, 0) / rirValeurs.length : null;
       const derniere = valeursComparables.at(-1);
       const finDeSeance = derniere.ordre >= derniere.total / 2;
       const recuperationBasse = (energieRecente !== null && energieRecente <= 2.5)
@@ -666,7 +770,8 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
       tendances.push({ nom, evolution, fatiguePossible, etat });
       const contextes = [];
       if (finDeSeance) contextes.push("Exercice de fin de séance : la fatigue peut expliquer une partie du résultat.");
-      if (derniere.rir !== null && derniere.rir !== undefined && derniere.rir <= 1) contextes.push(`Dernière série proche de l’échec (RIR ${derniere.rir}).`);
+       if (objectifAuMaximum(derniere.objectif)) contextes.push("Répétitions au maximum : un ressenti difficile et un RIR bas sont attendus ici, pas un signal de fatigue à eux seuls.");
+       else if (derniere.rir !== null && derniere.rir !== undefined && derniere.rir <= 1) contextes.push(`Dernière série proche de l’échec (RIR ${derniere.rir}).`);
       if (derniere.energie && derniere.energie <= 2) contextes.push(`Énergie basse (${derniere.energie}/5).`);
       if (derniere.sommeil && derniere.sommeil <= 2) contextes.push(`Sommeil bas (${derniere.sommeil}/5).`);
       const variantesUtilisees = [...new Set(valeurs.map((item) => item.nomEffectue).filter((nomEffectue) => nomEffectue !== nom))];
@@ -1630,6 +1735,7 @@ function renderDay(day, brouillon = null) {
     exerciseCard.dataset.day = day;
     exerciseCard.dataset.restSeconds = restSeconds;
     exerciseCard.dataset.chargeCoefficient = coefficientCharge;
+    exerciseCard.dataset.originalChargeCoefficient = coefficientCharge;
     exerciseCard.dataset.ajoute = estAjoute;
     exerciseCard.dataset.target = target;
     exerciseCard.dataset.noteProgramme = note;
@@ -1643,6 +1749,11 @@ function renderDay(day, brouillon = null) {
       : null;
     const nomEffectif = ancienExercice?.nom || name;
     card.querySelector(".exercise-name").textContent = nomEffectif;
+    configurerPoidsCorps(exerciseCard, nomEffectif, ancienExercice?.poidsCorps);
+    card.querySelector(".bodyweight-input").addEventListener("input", () => {
+      updateVolume(exerciseCard);
+      sauvegarderSeanceEnCours(day, session);
+    });
     const dernierePerformance = trouverDernierePerformance(nomEffectif);
     card.querySelector(".last-performance").textContent = texteDernierePerformance(dernierePerformance);
     card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance, target, nomEffectif);
@@ -1717,25 +1828,30 @@ function renderDay(day, brouillon = null) {
       }
       exerciseCard.querySelector(".exercise-name").textContent = nouveauNom;
       const derniere = trouverDernierePerformance(nouveauNom);
+      configurerPoidsCorps(exerciseCard, nouveauNom, derniere?.poidsCorps);
       exerciseCard.querySelector(".last-performance").textContent = texteDernierePerformance(derniere);
       exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere, target, nouveauNom);
       afficherDerniersPassages(nouveauNom, exerciseCard.querySelector(".exercise-history-list"));
       notePermanente.value = getNotesExercices()[nouveauNom] || "";
-      if (derniere?.seriesDetail?.length) {
+      if (derniere?.seriesDetail?.length && (!estExercicePoidsCorps(nouveauNom) || derniere.poidsCorps)) {
         exerciseCard.querySelector(".series-list").innerHTML = "";
         derniere.seriesDetail.forEach((serie) => {
           ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir);
         });
-        updateVolume(exerciseCard);
+      } else {
+        exerciseCard.querySelectorAll(".set-weight").forEach((champ) => { champ.value = 0; });
+        exerciseCard.querySelectorAll(".set-reps").forEach((champ) => { champ.value = ""; });
       }
+      updateVolume(exerciseCard);
       sauvegarderSeanceEnCours(day, session);
     });
 
     const performanceDeDepart = ancienExercice || dernierePerformance;
-    const seriesInitiales = performanceDeDepart?.seriesDetail?.length
+    const ancienneConventionDips = estExercicePoidsCorps(nomEffectif) && !performanceDeDepart?.poidsCorps;
+    const seriesInitiales = performanceDeDepart?.seriesDetail?.length && !ancienneConventionDips
       ? performanceDeDepart.seriesDetail
       : Array.from({ length: semaineLegere ? Math.max(1, (Number(target.split(" ")[0]) || 3) - 1) : (Number(ancienExercice?.series || target.split(" ")[0]) || 3) }, () => ({
-        charge: performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight),
+        charge: ancienneConventionDips ? 0 : (performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight)),
         repetitions: performanceDeDepart?.repetitions ?? "",
       }));
     seriesInitiales.forEach((serie) => ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir, Boolean(ancienExercice?.termine) && serie.terminee));
