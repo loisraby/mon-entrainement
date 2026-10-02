@@ -15,6 +15,58 @@ const SEANCE_LIBRE = {
   duration: "Ajoute seulement les exercices que tu fais aujourd’hui.",
   exercises: [],
 };
+const PROGRAMME_DEBUTANTE = {
+  id: "debutante-4-jours-v1",
+  nom: "Débutante — ensemble, 4 jours",
+  joursSansMusculation: {
+    Jeu: {
+      title: "Cours collectif",
+      description: "Le cours change chaque semaine : profite-en sans ajouter automatiquement une séance de musculation. Si les jambes ont beaucoup travaillé, allège ou décale la séance de vendredi.",
+    },
+  },
+  seances: {
+    Lun: {
+      title: "Haut du corps — Push",
+      duration: "~40 min · Choisis tes charges et garde environ 2 répétitions possibles.",
+      exercises: [
+        ["Développé couché barre", "2 × 8–12", null, "Barre légère ou variante chest press si plus confortable. Pieds au sol, mouvement contrôlé.", 120],
+        ["Développé incliné haltères", "2 × 8–12", null, "Banc légèrement incliné ; garde les épaules stables et une amplitude confortable.", 120],
+        ["Développé militaire haltères", "2 × 8–12", null, "Assise ou debout, évite de cambrer pour pousser la charge.", 120],
+        ["Extensions triceps poulie haute", "2 × 10–15", null, "Garde les coudes près du corps ; monte la charge seulement si le geste reste propre.", 90],
+      ],
+    },
+    Mar: {
+      title: "Jambes A — squat et arrière des cuisses",
+      duration: "~45 min · Échauffe-toi tranquillement et prends ton temps entre les séries.",
+      exercises: [
+        ["Squat barre", "2 × 8–10", null, "Commence léger ou choisis une variante guidée ; descends seulement aussi bas que tu le contrôles.", 120],
+        ["Romanian deadlift", "2 × 8–12", null, "Hanches vers l’arrière, dos stable ; cherche la tension derrière les cuisses, pas la charge maximale.", 120],
+        ["Presse à cuisses", "2 × 10–12", null, "Pieds stables et amplitude confortable ; garde le bassin posé sur le siège.", 120],
+        ["Leg curl couché", "2 × 10–15", null, "Plie les genoux sans élan, puis redescends lentement.", 90],
+      ],
+    },
+    Mer: {
+      title: "Haut du corps — Pull",
+      duration: "~40 min · Concentre-toi sur les mouvements du dos, pas seulement sur les bras.",
+      exercises: [
+        ["Tirage poulie haute prise neutre", "2 × 8–12", null, "Tire les coudes vers le bas ; évite de te balancer pour finir les répétitions.", 120],
+        ["Rowing haltère unilatéral", "2 × 10–12/côté", null, "Prends appui sur le banc et tire le coude vers la hanche sans tourner le buste.", 120],
+        ["Face pull câble", "2 × 12–15", null, "Charge légère ; tire la corde vers le visage avec un mouvement contrôlé.", 90],
+        ["Curl marteau haltères", "2 × 10–15", null, "Bras près du corps, sans élan. Une charge légère et propre suffit.", 90],
+      ],
+    },
+    Ven: {
+      title: "Jambes B — fessiers et compléments",
+      duration: "~40 min · Après un cours jambes intense le jeudi, allège, décale ou saute cette séance.",
+      exercises: [
+        ["Hip thrust barre", "2 × 8–12", null, "Pousse dans les pieds ; monte le bassin sans cambrer exagérément.", 120],
+        ["Fente marchée haltères", "2 × 8–10/côté", null, "Prends une charge facile à stabiliser. Variante possible : squat bulgare.", 120],
+        ["Leg extension", "2 × 10–15", null, "Monte sans à-coup et contrôle la descente.", 90],
+        ["Leg curl couché", "2 × 10–15", null, "La même machine que mardi : compare surtout la qualité du mouvement et les répétitions.", 90],
+      ],
+    },
+  },
+};
 let sessions = {};
 let programmeActif = null;
 let timerInterval = null;
@@ -89,6 +141,7 @@ document.querySelector("#stats-button").addEventListener("click", () => afficher
 document.querySelector("#analysis-button").addEventListener("click", () => afficherAnalyse());
 document.querySelector("#programs-button").addEventListener("click", () => afficherProgrammes());
 document.querySelector("#free-workout-button").addEventListener("click", commencerSeanceLibre);
+document.querySelector("#create-beginner-program")?.addEventListener("click", creerProgrammeDebutante);
 document.querySelector("#create-empty-program").addEventListener("click", creerProgrammeVide);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
 document.querySelector("#create-strength-program").addEventListener("click", creerProgrammeForce);
@@ -264,10 +317,15 @@ function getNotesExercices() {
   }
 }
 
+function cleNoteExercice(nom) {
+  return programmeActif?.id === PROGRAMME_DEBUTANTE.id ? `${PROGRAMME_DEBUTANTE.id}:${nom}` : nom;
+}
+
 function sauvegarderNoteExercice(nom, note) {
   const notes = getNotesExercices();
-  if (note.trim()) notes[nom] = note.trim();
-  else delete notes[nom];
+  const cle = cleNoteExercice(nom);
+  if (note.trim()) notes[cle] = note.trim();
+  else delete notes[cle];
   localStorage.setItem(NOTES_EXERCICES_KEY, JSON.stringify(notes));
 }
 
@@ -1329,6 +1387,21 @@ function copierProgrammeActif() {
   afficherProgrammes();
 }
 
+function creerProgrammeDebutante() {
+  if (getSeanceEnCours()) {
+    alert("Termine ou annule d’abord la séance en cours avant de changer de programme.");
+    return;
+  }
+  const programmes = getProgrammes();
+  if (!programmes.some((programme) => programme.id === PROGRAMME_DEBUTANTE.id)) {
+    programmes.push(JSON.parse(JSON.stringify(PROGRAMME_DEBUTANTE)));
+    sauvegarderProgrammes(programmes);
+  }
+  activerProgramme(PROGRAMME_DEBUTANTE.id);
+  programsPanel.classList.add("hidden");
+  afficherProgrammes();
+}
+
 function creerProgrammeVide() {
   const nom = prompt("Nom de ton programme :", "Mon programme");
   if (!nom?.trim()) return;
@@ -1591,7 +1664,9 @@ async function chargerProgramme() {
 }
 
 function trouverDernierePerformance(nomExercice) {
-  const historique = getSeancesRealisees();
+  const historique = programmeActif?.id === PROGRAMME_DEBUTANTE.id
+    ? getSeancesRealisees().filter((seance) => seance.programmeId === PROGRAMME_DEBUTANTE.id)
+    : getSeancesRealisees();
   for (let index = historique.length - 1; index >= 0; index--) {
     const performance = (historique[index].exercices || []).find((exercice) => exercice.nom === nomExercice && !exercice.passe);
     if (performance) return performance;
@@ -1620,7 +1695,10 @@ function texteDerniereSeance(seance) {
 }
 
 function derniersPassages(nomExercice) {
-  return getSeancesRealisees()
+  const historique = programmeActif?.id === PROGRAMME_DEBUTANTE.id
+    ? getSeancesRealisees().filter((seance) => seance.programmeId === PROGRAMME_DEBUTANTE.id)
+    : getSeancesRealisees();
+  return historique
     .flatMap((seance) => (seance.exercices || []).filter((exercice) => exercice.nom === nomExercice && !exercice.passe).map((exercice) => ({ exercice, date: new Date(seance.date) })))
     .slice(-5)
     .reverse();
@@ -1712,6 +1790,21 @@ function renderDay(day, brouillon = null) {
   workout.innerHTML = "";
   const session = getSessionDuJour(day);
   if (!session) {
+    const jourLibre = programmeActif?.joursSansMusculation?.[day];
+    if (jourLibre) {
+      const titre = document.createElement("h2");
+      titre.textContent = jourLibre.title;
+      const description = document.createElement("p");
+      description.className = "rest";
+      description.textContent = jourLibre.description;
+      const bouton = document.createElement("button");
+      bouton.type = "button";
+      bouton.className = "backup-button";
+      bouton.textContent = "Noter le cours (facultatif)";
+      bouton.addEventListener("click", commencerSeanceLibre);
+      workout.append(titre, description, bouton);
+      return;
+    }
     workout.innerHTML = "<p class='rest'>Aujourd’hui : récupération, course ou mobilité selon ton programme.</p>";
     return;
   }
@@ -1759,7 +1852,7 @@ function renderDay(day, brouillon = null) {
     card.querySelector(".progression-advice").textContent = conseilProgression(dernierePerformance, target, nomEffectif);
     afficherDerniersPassages(nomEffectif, card.querySelector(".exercise-history-list"));
     const notePermanente = card.querySelector(".exercise-memory-input");
-    notePermanente.value = getNotesExercices()[nomEffectif] || "";
+    notePermanente.value = getNotesExercices()[cleNoteExercice(nomEffectif)] || "";
     notePermanente.addEventListener("input", () => sauvegarderNoteExercice(exerciseCard.querySelector(".exercise-name").textContent, notePermanente.value));
 
     const selectSuperset = card.querySelector(".superset-select");
@@ -1832,14 +1925,14 @@ function renderDay(day, brouillon = null) {
       exerciseCard.querySelector(".last-performance").textContent = texteDernierePerformance(derniere);
       exerciseCard.querySelector(".progression-advice").textContent = conseilProgression(derniere, target, nouveauNom);
       afficherDerniersPassages(nouveauNom, exerciseCard.querySelector(".exercise-history-list"));
-      notePermanente.value = getNotesExercices()[nouveauNom] || "";
+      notePermanente.value = getNotesExercices()[cleNoteExercice(nouveauNom)] || "";
       if (derniere?.seriesDetail?.length && (!estExercicePoidsCorps(nouveauNom) || derniere.poidsCorps)) {
         exerciseCard.querySelector(".series-list").innerHTML = "";
         derniere.seriesDetail.forEach((serie) => {
           ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir);
         });
       } else {
-        exerciseCard.querySelectorAll(".set-weight").forEach((champ) => { champ.value = 0; });
+        exerciseCard.querySelectorAll(".set-weight").forEach((champ) => { champ.value = programmeActif?.id === PROGRAMME_DEBUTANTE.id ? "" : 0; });
         exerciseCard.querySelectorAll(".set-reps").forEach((champ) => { champ.value = ""; });
       }
       updateVolume(exerciseCard);
