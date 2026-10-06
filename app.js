@@ -142,6 +142,7 @@ document.querySelector("#analysis-button").addEventListener("click", () => affic
 document.querySelector("#programs-button").addEventListener("click", () => afficherProgrammes());
 document.querySelector("#free-workout-button").addEventListener("click", commencerSeanceLibre);
 document.querySelector("#share-active-program")?.addEventListener("click", partagerProgrammeActif);
+document.querySelector("#import-shared-program")?.addEventListener("click", demanderLienProgramme);
 document.querySelector("#create-beginner-program")?.addEventListener("click", creerProgrammeDebutante);
 document.querySelector("#create-empty-program").addEventListener("click", creerProgrammeVide);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
@@ -1377,15 +1378,36 @@ function decoderProgrammePartage(code) {
   return { nom: contenu.nom, seances, joursSansMusculation };
 }
 
-function importerProgrammeDepuisLien() {
-  const prefixe = "#programme=";
-  if (!window.location.hash.startsWith(prefixe)) return;
-  if (getSeanceEnCours()) {
-    alert("Termine ou annule d’abord la séance en cours, puis rouvre ce lien pour ajouter le programme.");
+function demanderLienProgramme() {
+  const saisie = prompt("Colle le lien du programme reçu :", "");
+  if (!saisie?.trim()) return;
+  let code;
+  try {
+    const lien = new URL(saisie.trim());
+    const dossier = new URL("./", window.location.href).pathname;
+    if (lien.origin !== window.location.origin
+      || ![dossier, `${dossier}index.html`].includes(lien.pathname)
+      || !lien.hash.startsWith("#programme=")) throw new Error("Lien invalide");
+    code = lien.hash.slice("#programme=".length);
+  } catch {
+    alert("Colle le lien complet du programme, depuis cette même application.");
     return;
   }
-  const code = window.location.hash.slice(prefixe.length);
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  importerProgrammeDepuisLien(code);
+}
+
+function importerProgrammeDepuisLien(code = null) {
+  const prefixe = "#programme=";
+  const depuisAdresse = code === null;
+  if (depuisAdresse && !window.location.hash.startsWith(prefixe)) return;
+  if (getSeanceEnCours()) {
+    alert("Termine ou annule d’abord la séance en cours, puis réessaie d’ajouter le programme.");
+    return;
+  }
+  if (depuisAdresse) {
+    code = window.location.hash.slice(prefixe.length);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
   let contenu;
   try {
     contenu = decoderProgrammePartage(code);
