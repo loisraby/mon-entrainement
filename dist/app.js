@@ -141,6 +141,7 @@ document.querySelector("#stats-button").addEventListener("click", () => afficher
 document.querySelector("#analysis-button").addEventListener("click", () => afficherAnalyse());
 document.querySelector("#programs-button").addEventListener("click", () => afficherProgrammes());
 document.querySelector("#free-workout-button").addEventListener("click", commencerSeanceLibre);
+document.querySelector("#share-active-program")?.addEventListener("click", partagerProgrammeActif);
 document.querySelector("#create-beginner-program")?.addEventListener("click", creerProgrammeDebutante);
 document.querySelector("#create-empty-program").addEventListener("click", creerProgrammeVide);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
@@ -1293,6 +1294,119 @@ function sauvegarderProgrammes(programmes) {
   localStorage.setItem(PROGRAMMES_KEY, JSON.stringify(programmes));
 }
 
+function encoderProgrammePartage(programme) {
+  const contenu = {
+    version: 1,
+    nom: programme.nom,
+    seances: Object.fromEntries(Object.entries(programme.seances || {}).map(([jour, seance]) => [jour, {
+      title: seance.title,
+      duration: seance.duration || "",
+      exercises: (seance.exercises || []).map((exercice) => {
+        const copie = [...exercice];
+        copie[2] = null; // Les charges de référence ne sont pas celles de la personne qui reçoit le lien.
+        return copie;
+      }),
+    }])),
+    joursSansMusculation: programme.joursSansMusculation || {},
+  };
+  const octets = new TextEncoder().encode(JSON.stringify(contenu));
+  let binaire = "";
+  for (let index = 0; index < octets.length; index += 8192) {
+    binaire += String.fromCharCode(...octets.subarray(index, index + 8192));
+  }
+  return btoa(binaire).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function partagerProgrammeActif() {
+  if (!programmeActif || Object.keys(programmeActif.seances || {}).length === 0) {
+    alert("Choisis d’abord un programme contenant des séances.");
+    return;
+  }
+  const lien = new URL(window.location.href);
+  lien.hash = `programme=${encoderProgrammePartage(programmeActif)}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: programmeActif.nom, text: "Voici mon programme d’entraînement à ajouter dans l’appli.", url: lien.href });
+      return;
+    } catch (erreur) {
+      if (erreur?.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(lien.href);
+    alert("Lien du programme copié. Tu peux maintenant l’envoyer.");
+  } catch {
+    prompt("Copie ce lien et envoie-le :", lien.href);
+  }
+}
+
+function decoderProgrammePartage(code) {
+  if (!code || code.length > 100000 || !/^[A-Za-z0-9_-]+$/.test(code)) throw new Error("Lien invalide");
+  const binaire = atob(code.replace(/-/g, "+").replace(/_/g, "/"));
+  const octets = Uint8Array.from(binaire, (caractere) => caractere.charCodeAt(0));
+  const contenu = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(octets));
+  const texteValide = (texte, maximum, obligatoire = false) => typeof texte === "string"
+    && texte.length <= maximum && !/[<>]/.test(texte) && (!obligatoire || texte.trim().length > 0);
+  if (contenu?.version !== 1 || !texteValide(contenu.nom, 100, true)
+    || !contenu.seances || typeof contenu.seances !== "object" || Array.isArray(contenu.seances)) throw new Error("Programme invalide");
+  const jours = Object.entries(contenu.seances);
+  if (jours.length === 0 || jours.length > 7) throw new Error("Programme vide");
+  const seances = {};
+  jours.forEach(([jour, seance]) => {
+    if (!days.includes(jour) || !seance || !texteValide(seance.title, 150, true)
+      || !texteValide(seance.duration, 250) || !Array.isArray(seance.exercises)
+      || seance.exercises.length > 30) throw new Error("Séance invalide");
+    const exercises = seance.exercises.map((exercice) => {
+      if (!Array.isArray(exercice) || !texteValide(exercice[0], 120, true)
+        || !texteValide(exercice[1], 60, true) || !texteValide(exercice[3] ?? "", 300)
+        || !texteValide(exercice[6] ?? "", 120)) throw new Error("Exercice invalide");
+      const repos = Number(exercice[4] ?? 90);
+      const coefficient = Number(exercice[5] ?? 1);
+      if (!Number.isFinite(repos) || repos < 30 || repos > 600
+        || !Number.isFinite(coefficient) || coefficient <= 0 || coefficient > 10) throw new Error("Exercice invalide");
+      return [exercice[0], exercice[1], null, exercice[3] ?? "", repos, coefficient, exercice[6] ?? ""];
+    });
+    seances[jour] = { title: seance.title, duration: seance.duration, exercises };
+  });
+  const joursSansMusculation = {};
+  for (const [jour, details] of Object.entries(contenu.joursSansMusculation || {})) {
+    if (!days.includes(jour) || !texteValide(details?.title, 150, true)
+      || !texteValide(details?.description, 500)) throw new Error("Jour invalide");
+    joursSansMusculation[jour] = { title: details.title, description: details.description };
+  }
+  return { nom: contenu.nom, seances, joursSansMusculation };
+}
+
+function importerProgrammeDepuisLien() {
+  const prefixe = "#programme=";
+  if (!window.location.hash.startsWith(prefixe)) return;
+  if (getSeanceEnCours()) {
+    alert("Termine ou annule d’abord la séance en cours, puis rouvre ce lien pour ajouter le programme.");
+    return;
+  }
+  const code = window.location.hash.slice(prefixe.length);
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  let contenu;
+  try {
+    contenu = decoderProgrammePartage(code);
+  } catch {
+    alert("Ce lien de programme est incomplet ou invalide. Demande un nouveau lien de partage.");
+    return;
+  }
+  if (!confirm(`Ajouter « ${contenu.nom} » sur cet appareil ? Le lien copie le programme, mais pas l’historique ni les mesures de l’autre téléphone.`)) return;
+  const programme = {
+    id: `programme-partage-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    nom: `${contenu.nom} — copie`,
+    seances: contenu.seances,
+    joursSansMusculation: contenu.joursSansMusculation,
+  };
+  const programmes = getProgrammes();
+  programmes.push(programme);
+  sauvegarderProgrammes(programmes);
+  activerProgramme(programme.id);
+  alert("Programme ajouté ! Renseigne tes propres charges pendant les séances.");
+}
+
 function activerProgramme(id, afficher = true) {
   const programme = getProgrammes().find((item) => item.id === id);
   if (!programme) return;
@@ -1661,6 +1775,7 @@ async function chargerProgramme() {
   renderDay(days[todayIndex]);
   afficherSeanceEnCours();
   mettreAJourStatutSauvegarde();
+  importerProgrammeDepuisLien();
 }
 
 function trouverDernierePerformance(nomExercice) {
