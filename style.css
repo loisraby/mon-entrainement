@@ -328,6 +328,10 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 .editor-exercise-actions button { width: auto; }
 .program-actions { margin-top: 14px; }
 .program-actions .finish-button { flex: 1 1 210px; }
+.program-link-import { border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; padding: 12px; }
+.program-link-import summary { cursor: pointer; font-weight: 700; }
+.program-link-import label { display: block; font-size: .85rem; margin-top: 12px; }
+.program-link-import textarea { margin: 8px 0; min-height: 88px; resize: vertical; }
 
 .delete-session {
   margin-top: 12px;

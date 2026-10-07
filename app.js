@@ -1327,7 +1327,7 @@ async function partagerProgrammeActif() {
   lien.hash = `programme=${encoderProgrammePartage(programmeActif)}`;
   if (navigator.share) {
     try {
-      await navigator.share({ title: programmeActif.nom, text: "Voici mon programme d’entraînement à ajouter dans l’appli.", url: lien.href });
+      await navigator.share({ url: lien.href });
       return;
     } catch (erreur) {
       if (erreur?.name === "AbortError") return;
@@ -1379,21 +1379,31 @@ function decoderProgrammePartage(code) {
 }
 
 function demanderLienProgramme() {
-  const saisie = prompt("Colle le lien du programme reçu :", "");
-  if (!saisie?.trim()) return;
-  let code;
-  try {
-    const lien = new URL(saisie.trim());
-    const dossier = new URL("./", window.location.href).pathname;
-    if (lien.origin !== window.location.origin
-      || ![dossier, `${dossier}index.html`].includes(lien.pathname)
-      || !lien.hash.startsWith("#programme=")) throw new Error("Lien invalide");
-    code = lien.hash.slice("#programme=".length);
-  } catch {
-    alert("Colle le lien complet du programme, depuis cette même application.");
+  const champ = document.querySelector("#shared-program-link");
+  const saisie = champ?.value || "";
+  if (!saisie.trim()) {
+    alert("Colle d’abord le lien reçu dans la zone au-dessus.");
     return;
   }
-  importerProgrammeDepuisLien(code);
+  let code;
+  try {
+    const adresses = [...saisie.matchAll(/https:\/\/[^\s<>]+/gi)]
+      .map(([url]) => url.replace(/[),.;!?]+$/, ""));
+    const adresse = adresses.find((url) => url.includes("#programme=")) || adresses[0];
+    if (!adresse) throw new Error("Aucune adresse trouvée");
+    const lien = new URL(adresse);
+    const dossier = new URL("./", window.location.href).pathname;
+    if (lien.origin !== window.location.origin
+      || ![dossier, `${dossier}index.html`].includes(lien.pathname)) throw new Error("Autre site");
+    if (!lien.hash.startsWith("#programme=")) throw new Error("Programme absent du lien");
+    code = lien.hash.slice("#programme=".length);
+  } catch (erreur) {
+    alert(erreur.message === "Programme absent du lien"
+      ? "Le lien collé ouvre l’appli, mais ne contient pas le programme. Il doit aussi avoir une longue partie après « #programme= ». Partage-le de nouveau depuis « Partager le programme actif »."
+      : "Colle le lien complet reçu, depuis la même adresse de l’appli GitHub Pages.");
+    return;
+  }
+  if (importerProgrammeDepuisLien(code)) champ.value = "";
 }
 
 function importerProgrammeDepuisLien(code = null) {
@@ -1402,7 +1412,7 @@ function importerProgrammeDepuisLien(code = null) {
   if (depuisAdresse && !window.location.hash.startsWith(prefixe)) return;
   if (getSeanceEnCours()) {
     alert("Termine ou annule d’abord la séance en cours, puis réessaie d’ajouter le programme.");
-    return;
+    return false;
   }
   if (depuisAdresse) {
     code = window.location.hash.slice(prefixe.length);
@@ -1413,9 +1423,9 @@ function importerProgrammeDepuisLien(code = null) {
     contenu = decoderProgrammePartage(code);
   } catch {
     alert("Ce lien de programme est incomplet ou invalide. Demande un nouveau lien de partage.");
-    return;
+    return false;
   }
-  if (!confirm(`Ajouter « ${contenu.nom} » sur cet appareil ? Le lien copie le programme, mais pas l’historique ni les mesures de l’autre téléphone.`)) return;
+  if (!confirm(`Ajouter « ${contenu.nom} » sur cet appareil ? Le lien copie le programme, mais pas l’historique ni les mesures de l’autre téléphone.`)) return false;
   const programme = {
     id: `programme-partage-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     nom: `${contenu.nom} — copie`,
@@ -1427,6 +1437,7 @@ function importerProgrammeDepuisLien(code = null) {
   sauvegarderProgrammes(programmes);
   activerProgramme(programme.id);
   alert("Programme ajouté ! Renseigne tes propres charges pendant les séances.");
+  return true;
 }
 
 function activerProgramme(id, afficher = true) {
