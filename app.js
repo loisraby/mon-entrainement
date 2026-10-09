@@ -191,7 +191,9 @@ function dernierPoidsCorps() {
 }
 
 function estExercicePoidsCorps(nom) {
-  return /\bdips?\b/i.test(nom || "");
+  const exercice = String(nom || "").trim();
+  return /\b(?:dips?|pompes?|pull[ -]?ups?|chin[ -]?ups?|muscle[ -]?ups?|pdc|poids du corps)\b/i.test(exercice)
+    || /^tractions?\b/i.test(exercice);
 }
 
 function objectifAuMaximum(objectif) {
@@ -577,6 +579,10 @@ function formatKg(value) {
   return Math.round(value).toLocaleString("fr-FR");
 }
 
+function formatPoidsCorps(value) {
+  return Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+}
+
 function formatDuree(secondes) {
   const total = Math.max(0, Math.round(Number(secondes) || 0));
   const heures = Math.floor(total / 3600);
@@ -610,14 +616,19 @@ function debutSemaine(date) {
 
 function updateVolume(card) {
   const { volume, volumeAffiche, coefficientCharge } = lireExercice(card);
-  if (card.dataset.poidsCorpsActif === "true" && !(Number(card.querySelector(".bodyweight-input")?.value) > 0)) {
+  const poidsCorpsActif = card.dataset.poidsCorpsActif === "true";
+  const poidsCorps = Number(card.querySelector(".bodyweight-input")?.value);
+  if (poidsCorpsActif && !(poidsCorps > 0)) {
     card.querySelector(".volume").textContent = "Renseigne ton poids du corps pour estimer le volume.";
     updateTotalVolume();
     return;
   }
-  const precision = coefficientCharge !== 1
-    ? ` de référence (${formatKg(volumeAffiche)} kg affichés × ${coefficientCharge.toLocaleString("fr-FR")})`
-    : "";
+  let precision = "";
+  if (poidsCorpsActif) {
+    precision = ` de référence (PDC ${formatPoidsCorps(poidsCorps)} kg + lest / aide de chaque série)`;
+  } else if (coefficientCharge !== 1) {
+    precision = ` de référence (${formatKg(volumeAffiche)} kg affichés × ${coefficientCharge.toLocaleString("fr-FR")})`;
+  }
   card.querySelector(".volume").textContent = `Volume : ${formatKg(volume)} kg${precision}`;
   updateTotalVolume();
 }
@@ -681,7 +692,12 @@ function configurerPoidsCorps(card, nom, poidsConserve = null) {
   zone.classList.toggle("hidden", !actif);
   card.dataset.chargeCoefficient = actif ? "1" : (card.dataset.originalChargeCoefficient || "1");
   const champ = zone.querySelector(".bodyweight-input");
-  if (actif && !champ.value) champ.value = poidsConserve || dernierPoidsCorps() || "";
+  const derniereMesure = dernierPoidsCorps();
+  if (actif && !champ.value) champ.value = poidsConserve || derniereMesure || "";
+  const aide = zone.querySelector(".bodyweight-help");
+  if (actif && aide) aide.textContent = derniereMesure
+    ? `Dernière pesée : ${formatPoidsCorps(derniereMesure)} kg (base proposée, modifiable). Dans chaque série : 0 kg = PDC seul, +5 kg = lesté, −20 kg = délesté.`
+    : "Aucune pesée enregistrée : indique ton poids du corps ci-dessus. Dans chaque série : 0 kg = PDC seul, +5 kg = lesté, −20 kg = délesté.";
   card.querySelectorAll(".set-weight").forEach((input) => {
     input.min = actif ? "-300" : "0";
     input.closest("label").firstChild.textContent = actif ? "Lest / aide (kg)" : "Charge (kg)";
@@ -2088,16 +2104,16 @@ function renderDay(day, brouillon = null) {
     });
 
     const performanceDeDepart = ancienExercice || dernierePerformance;
-    const ancienneConventionDips = estExercicePoidsCorps(nomEffectif) && !performanceDeDepart?.poidsCorps;
+    const ancienneConventionPoidsCorps = estExercicePoidsCorps(nomEffectif) && !performanceDeDepart?.poidsCorps;
     const nombreSeriesVise = semaineLegere
       ? Math.max(1, (Number(target.split(" ")[0]) || 3) - 1)
       : (Number(target.split(" ")[0]) || 3);
-    const seriesInitiales = performanceDeDepart?.seriesDetail?.length && !ancienneConventionDips
+    const seriesInitiales = performanceDeDepart?.seriesDetail?.length && !ancienneConventionPoidsCorps
       ? ancienExercice
         ? performanceDeDepart.seriesDetail
         : performanceDeDepart.seriesDetail.filter((serie, index, toutes) => serie.echauffement || toutes.slice(0, index + 1).filter((item) => !item.echauffement).length <= nombreSeriesVise)
       : Array.from({ length: ancienExercice?.series || nombreSeriesVise }, () => ({
-        charge: ancienneConventionDips ? 0 : (performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight)),
+        charge: ancienneConventionPoidsCorps ? 0 : (performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight)),
         repetitions: performanceDeDepart?.repetitions ?? "",
       }));
     seriesInitiales.forEach((serie) => ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir, Boolean(ancienExercice?.termine) && serie.terminee));
