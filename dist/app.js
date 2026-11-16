@@ -93,6 +93,7 @@ const VARIANTES = {
   "Élévations latérales haltères": ["Élévations latérales câble", "Machine élévations latérales"],
   "Élévations latérales câble": ["Élévations latérales haltères", "Machine élévations latérales"],
   "Extensions triceps poulie haute": ["Pushdown triceps barre droite", "Extensions triceps haltère"],
+  "Extensions triceps au-dessus tête": ["Pushdown triceps barre droite", "Extensions triceps poulie haute"],
   "Dips lestés ou barre": ["Dips assistés", "Développé serré"],
   "Squat barre": ["Hack squat", "Squat Smith machine"],
   "Romanian deadlift": ["Soulevé de terre jambes tendues", "Leg curl assis"],
@@ -146,6 +147,7 @@ document.querySelector("#import-shared-program")?.addEventListener("click", dema
 document.querySelector("#create-beginner-program")?.addEventListener("click", creerProgrammeDebutante);
 document.querySelector("#create-empty-program").addEventListener("click", creerProgrammeVide);
 document.querySelector("#duplicate-program").addEventListener("click", copierProgrammeActif);
+document.querySelector("#create-balanced-pplpp")?.addEventListener("click", creerProgrammePPLPPReequilibre);
 document.querySelector("#create-strength-program").addEventListener("click", creerProgrammeForce);
 document.querySelector("#edit-program").addEventListener("click", ouvrirEditeurProgramme);
 document.querySelector("#deload-toggle").addEventListener("click", basculerSemaineLegere);
@@ -757,6 +759,42 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
     if (terminee) lancerReposApresSerie(exerciseCard);
   });
   list.append(row);
+}
+function preparerSeriesInitiales({ ancienExercice, dernierePerformance, nom, objectif, chargePlan, semaineLegere }) {
+  const performance = ancienExercice || dernierePerformance;
+  const exercicePoidsCorps = estExercicePoidsCorps(nom);
+  const ancienneConventionPoidsCorps = exercicePoidsCorps && !performance?.poidsCorps;
+  const seriesVisees = semaineLegere
+    ? Math.max(1, (Number(objectif.split(" ")[0]) || 3) - 1)
+    : (Number(objectif.split(" ")[0]) || 3);
+  const depuisHistorique = Boolean(performance?.seriesDetail?.length && !ancienneConventionPoidsCorps);
+  const chargeSansDetail = ancienneConventionPoidsCorps ? 0 : (performance?.charge ?? chargePlan);
+  const chargeInitiale = semaineLegere && !ancienExercice && !exercicePoidsCorps
+    ? Math.round((Number(chargeSansDetail) || 0) * 0.9 * 2) / 2
+    : chargeSansDetail;
+  let series = depuisHistorique
+    ? ancienExercice
+      ? performance.seriesDetail
+      : performance.seriesDetail.filter((serie, index, toutes) =>
+        serie.echauffement || toutes.slice(0, index + 1).filter((item) => !item.echauffement).length <= seriesVisees)
+    : Array.from({ length: ancienExercice?.series || seriesVisees }, () => ({
+      charge: chargeInitiale,
+      repetitions: performance?.repetitions ?? "",
+    }));
+  if (depuisHistorique && semaineLegere && !ancienExercice && !exercicePoidsCorps) {
+    series = series.map((serie) => serie.echauffement ? serie : {
+      ...serie,
+      charge: Math.round((Number(serie.charge) || 0) * 0.9 * 2) / 2,
+    });
+  }
+  if (!ancienExercice) {
+    const travail = series.filter((serie) => !serie.echauffement);
+    const modele = travail.at(-1);
+    for (let index = travail.length; index < seriesVisees && modele; index++) {
+      series.push({ ...modele, echauffement: false, terminee: false });
+    }
+  }
+  return series;
 }
 
 function updateSessionProgress() {
@@ -1477,13 +1515,18 @@ function sauvegarderProgrammeActif() {
 function basculerSemaineLegere() {
   if (!programmeActif) return;
   programmeActif.semaineLegere = !programmeActif.semaineLegere;
+  if (!programmeActif.semaineLegere) programmeActif.repriseInitiale = false;
   sauvegarderProgrammeActif();
-  document.querySelector("#deload-toggle").textContent = programmeActif.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
+  document.querySelector("#deload-toggle").textContent = libelleBoutonSemaineLegere();
+  if (!programsPanel.classList.contains("hidden")) afficherProgrammes(true);
   renderDay(days[todayIndex]);
 }
-
-function afficherProgrammes() {
-  if (!programsPanel.classList.contains("hidden")) {
+function libelleBoutonSemaineLegere() {
+  if (programmeActif?.repriseInitiale && programmeActif.semaineLegere) return "Terminer la semaine de reprise";
+  return programmeActif?.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
+}
+function afficherProgrammes(forceOpen = false) {
+  if (!forceOpen && !programsPanel.classList.contains("hidden")) {
     programsPanel.classList.add("hidden");
     return;
   }
@@ -1491,7 +1534,9 @@ function afficherProgrammes() {
   statsPanel.classList.add("hidden");
   analysisPanel.classList.add("hidden");
   programEditor.classList.add("hidden");
-  document.querySelector("#deload-toggle").textContent = programmeActif?.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
+  document.querySelector("#deload-toggle").textContent = libelleBoutonSemaineLegere();
+  const boutonPPLPP = document.querySelector("#create-balanced-pplpp");
+  if (boutonPPLPP) boutonPPLPP.disabled = programmeActif?.type === "pplpp-equilibre-v1";
   programList.innerHTML = "";
   const dernierDeload = [...getSeancesRealisees()].reverse().find((seance) => seance.semaineLegere && seance.programmeId === programmeActif?.id);
   const texteDeload = dernierDeload
@@ -1506,7 +1551,7 @@ function afficherProgrammes() {
     titre.textContent = programme.nom;
     const details = document.createElement("p");
     details.className = "muted";
-    details.textContent = `${Object.values(programme.seances || {}).length} séances${programme.id === programmeActif?.id ? " · actif" : ""}`;
+    details.textContent = `${Object.values(programme.seances || {}).length} séances${programme.id === programmeActif?.id ? " · actif" : ""}${programme.repriseInitiale && programme.semaineLegere ? " · reprise allégée" : ""}`;
     texte.append(titre, details);
     const actions = document.createElement("div");
     actions.className = "program-entry-actions";
@@ -1548,6 +1593,124 @@ function copierProgrammeActif() {
   activerProgramme(copie.id);
   programsPanel.classList.add("hidden");
   afficherProgrammes();
+}
+function construireSeancesPPLPP(source) {
+  const prendre = (jour, nom, objectif, repos, conseil = "") => {
+    const exercice = source.seances?.[jour]?.exercises?.find((item) => item[0] === nom);
+    if (!exercice) throw new Error(`${jour} — ${nom}`);
+    const copie = [...exercice];
+    copie[1] = objectif;
+    copie[3] = [exercice[3], conseil].filter(Boolean).join(" · ");
+    copie[4] = repos;
+    if (copie.length < 6) copie[5] = 1;
+    copie[6] = ""; // Les anciens supersets peuvent relier des exercices désormais séparés.
+    return copie;
+  };
+  const ajouter = (nom, objectif, note, repos) => [nom, objectif, null, note, repos, 1, ""];
+  const requis = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+  if (requis.some((jour) => !source.seances?.[jour]?.exercises?.length)) {
+    throw new Error("Le programme actif ne contient pas les cinq séances PPLPP attendues.");
+  }
+  return {
+    Lun: {
+      title: "Push A — Pectoraux + épaules",
+      duration: "~55–65 min · Garde 1–3 reps en réserve ; les charges du plan sont des repères.",
+      exercises: [
+        prendre("Lun", "Développé couché barre", "3 × 6–8", 180),
+        prendre("Lun", "Développé incliné haltères", "3 × 8–10", 150),
+        prendre("Lun", "Développé militaire haltères", "2 × 8–10", 150),
+        prendre("Lun", "Écarté poulie haute (pecs)", "2 × 12–15", 75),
+        prendre("Lun", "Élévations latérales haltères", "3 × 12–20", 75),
+        prendre("Lun", "Dips lestés ou barre", "2 × 8–12", 120, "Lest ou assistance selon tes reps propres ; compte le PDC dans l’app."),
+        prendre("Lun", "Extensions triceps poulie haute", "2 × 10–15", 75),
+      ],
+    },
+    Mar: {
+      title: "Legs A — Quadriceps + stabilité",
+      duration: "~55–65 min · Fentes contrôlées ; si ski ou rando longue, enlève une série de presse et de fentes.",
+      exercises: [
+        prendre("Mar", "Squat barre", "3 × 6–10", 180, "Arrête avant que la technique se dégrade ; 2–3 RIR."),
+        prendre("Mar", "Presse à cuisses", "2 × 10–12", 150),
+        prendre("Mar", "Fente marchée haltères", "2 × 8–10/côté", 120, "Contrôle l’appui sur chaque jambe ; pas de recherche d’échec."),
+        prendre("Jeu", "Leg extension", "2 × 12–15", 90, "Déplacé du jeudi ; descente contrôlée."),
+        ajouter("Calf raise machine", "2 × 12–20", "Mollets, genou plutôt tendu · contrôle toute l’amplitude · choisis ta charge.", 75),
+        ajouter("Mollets assis (soléaire)", "2 × 15–20", "Genoux fléchis · charge à choisir ; si machine absente, utilise une variante adaptée ou passe l’exercice.", 75),
+      ],
+    },
+    Mer: {
+      title: "Pull A — Dos + biceps",
+      duration: "~50–60 min · Rowing avec appui pour ménager le bas du dos avant le RDL de jeudi.",
+      exercises: [
+        prendre("Mer", "Traction lestée ou assistée", "3 × 6–10", 180),
+        prendre("Mer", "Rowing haltère unilatéral", "3 × 8–12/côté", 150, "Appui sur banc ; évite de fatiguer les lombaires avant jeudi."),
+        prendre("Mer", "Tirage poulie basse serré", "2 × 10–15", 90),
+        prendre("Mer", "Face pull câble", "2 × 15–20", 75),
+        prendre("Mer", "Curl barre droite", "3 × 8–12", 90),
+        prendre("Mer", "Curl marteau haltères", "2 × 10–15", 75),
+      ],
+    },
+    Jeu: {
+      title: "Push B + chaîne postérieure",
+      duration: "~65–75 min · RDL et leg curl remplacent le rappel quadriceps ; adapte si fatigue ou sortie montagne.",
+      exercises: [
+        prendre("Jeu", "Développé militaire barre", "3 × 6–8", 180),
+        prendre("Mar", "Romanian deadlift", "3 × 8–10", 180, "Déplacé du mardi ; 2–3 RIR, dos stable."),
+        prendre("Jeu", "Développé couché haltères", "2 × 8–12", 150),
+        prendre("Jeu", "Leg curl couché", "3 × 10–15", 90, "Ischios : contrôle la descente sans aller systématiquement à l’échec."),
+        prendre("Mar", "Hip thrust barre", "2 × 10–15", 120, "Déplacé du mardi ; passe-le si la récupération ou une sortie montagne le demande."),
+        prendre("Jeu", "Écarté poulie basse (pecs)", "2 × 12–15", 75),
+        prendre("Lun", "Élévations latérales câble", "2 × 12–20", 75),
+        prendre("Jeu", "Extensions triceps au-dessus tête", "2 × 10–15", 75),
+      ],
+    },
+    Ven: {
+      title: "Pull B — Dos volume + arrière épaule",
+      duration: "~50–60 min · Complète Pull A sans multiplier les rowings et curls similaires.",
+      exercises: [
+        prendre("Ven", "Rowing machine (Hammer Strength)", "3 × 8–12", 150),
+        prendre("Ven", "Tirage poulie haute prise large", "3 × 8–12", 150),
+        prendre("Ven", "Pull-over câble", "2 × 12–15", 75),
+        prendre("Ven", "Face pull câble prise corde", "2 × 15–20", 75),
+        prendre("Ven", "Curl incliné haltères", "3 × 10–15", 90),
+        prendre("Ven", "Curl concentré haltère", "2 × 12–15", 75),
+      ],
+    },
+  };
+}
+function creerProgrammePPLPPReequilibre() {
+  if (!programmeActif) return;
+  if (programmeActif.type === "pplpp-equilibre-v1") {
+    alert("Ce programme est déjà rééquilibré. Sélectionne l’ancien programme si tu veux recréer une copie.");
+    return;
+  }
+  if (getSeanceEnCours()) {
+    alert("Termine ou annule d’abord la séance en cours avant de changer de programme.");
+    return;
+  }
+  let seances;
+  try {
+    seances = construireSeancesPPLPP(programmeActif);
+  } catch (erreur) {
+    alert(`Impossible de créer la copie sans modifier ton programme : ${erreur.message}. Vérifie que le programme actif est bien ton PPLPP Hypertrophie.`);
+    return;
+  }
+  if (!confirm("Créer et activer une copie PPLPP rééquilibrée ? Ton programme actuel, ton historique et tes mesures seront conservés. La semaine de reprise (une série de moins) sera activée sur la copie.")) return;
+  const programmes = getProgrammes();
+  const copie = {
+    id: `pplpp-equilibre-${Date.now()}`,
+    nom: "PPLPP — Hypertrophie & montagne",
+    type: "pplpp-equilibre-v1",
+    sourceProgrammeId: programmeActif.id,
+    semaineLegere: true,
+    repriseInitiale: true,
+    seances,
+  };
+  programmes.push(copie);
+  sauvegarderProgrammes(programmes);
+  activerProgramme(copie.id);
+  programsPanel.classList.add("hidden");
+  afficherProgrammes();
+  alert("Nouveau PPLPP ajouté et activé. La première semaine est allégée : vérifie tes charges et garde 3–4 reps en réserve. Désactive « semaine légère » après la reprise si tout va bien.");
 }
 
 function creerProgrammeDebutante() {
@@ -1975,7 +2138,10 @@ function renderDay(day, brouillon = null) {
 
   const semaineLegere = day !== SEANCE_LIBRE_JOUR && Boolean(programmeActif?.semaineLegere);
   const derniereSeance = trouverDerniereSeance(day);
-  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? "<p class='deload-banner'>Semaine légère : environ −10 % de charge et une série de moins. Ajuste librement selon ta forme.</p>" : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
+  const texteSemaineLegere = programmeActif?.repriseInitiale
+    ? "Semaine de reprise : une série de moins et charges externes proposées environ 10 % plus légères. Garde 3–4 reps en réserve ; termine la reprise dans Mes programmes quand tu es prêt."
+    : "Semaine légère : une série de moins et charges externes proposées environ 10 % plus légères. Ajuste librement selon ta forme.";
+  workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? `<p class='deload-banner'>${texteSemaineLegere}</p>` : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
   const brouillonTrouve = brouillon || getSeanceEnCours();
   const seanceEnCours = brouillonTrouve?.jour === day && (!brouillonTrouve.programmeId || brouillonTrouve.programmeId === programmeActif?.id)
     ? brouillonTrouve
@@ -2102,20 +2268,14 @@ function renderDay(day, brouillon = null) {
       updateVolume(exerciseCard);
       sauvegarderSeanceEnCours(day, session);
     });
-
-    const performanceDeDepart = ancienExercice || dernierePerformance;
-    const ancienneConventionPoidsCorps = estExercicePoidsCorps(nomEffectif) && !performanceDeDepart?.poidsCorps;
-    const nombreSeriesVise = semaineLegere
-      ? Math.max(1, (Number(target.split(" ")[0]) || 3) - 1)
-      : (Number(target.split(" ")[0]) || 3);
-    const seriesInitiales = performanceDeDepart?.seriesDetail?.length && !ancienneConventionPoidsCorps
-      ? ancienExercice
-        ? performanceDeDepart.seriesDetail
-        : performanceDeDepart.seriesDetail.filter((serie, index, toutes) => serie.echauffement || toutes.slice(0, index + 1).filter((item) => !item.echauffement).length <= nombreSeriesVise)
-      : Array.from({ length: ancienExercice?.series || nombreSeriesVise }, () => ({
-        charge: ancienneConventionPoidsCorps ? 0 : (performanceDeDepart?.charge ?? (semaineLegere ? Math.round(Number(weight) * 0.9 * 2) / 2 : weight)),
-        repetitions: performanceDeDepart?.repetitions ?? "",
-      }));
+    const seriesInitiales = preparerSeriesInitiales({
+      ancienExercice,
+      dernierePerformance,
+      nom: nomEffectif,
+      objectif: target,
+      chargePlan: weight,
+      semaineLegere,
+    });
     seriesInitiales.forEach((serie) => ajouterSerie(exerciseCard, serie.charge, serie.repetitions, serie.echauffement, serie.rir, Boolean(ancienExercice?.termine) && serie.terminee));
     if (ancienExercice?.termine) {
       card.querySelector(".exercise-card").classList.add("completed");
