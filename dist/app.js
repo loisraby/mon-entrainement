@@ -695,6 +695,7 @@ function lireExercice(card) {
     : 0;
   const passe = card.classList.contains("skipped");
   return {
+    groupePrincipal: card.dataset.groupePrincipal || groupeMusculaire(card.querySelector(".exercise-name").textContent),
     charge,
     chargeReference,
     poidsCorps,
@@ -851,14 +852,47 @@ function updateSessionProgress() {
   return { completed, total: cards.length };
 }
 
-function groupeMusculaire(nom) {
-  const texte = nom.toLowerCase();
+function groupeMusculaire(nom, groupeEnregistre = "") {
+  if (groupeEnregistre) return groupeEnregistre;
+  const reference = exerciceDuCatalogue(nom);
+  if (reference) return reference.groupe_principal;
+  const texte = String(nom || "").toLocaleLowerCase("fr-FR");
   if (/curl|biceps/.test(texte)) return "Biceps";
   if (/triceps|dips/.test(texte)) return "Triceps";
+  if (/militaire|épaule|shoulder|élévation|oiseau|face pull/.test(texte)) return "Épaules";
   if (/développé|écarté|pec deck|chest press/.test(texte)) return "Pectoraux";
-  if (/rowing|tirage|traction|pull-over|face pull|shrugs/.test(texte)) return "Dos";
-  if (/élévation|oiseau|militaire|shoulder/.test(texte)) return "Épaules";
-  return "Jambes et fessiers";
+  if (/rowing|tirage|traction|pull.over|shrugs/.test(texte)) return "Dos";
+  if (/squat|presse|fente|leg ext/.test(texte)) return "Quadriceps";
+  if (/leg curl|ischio|deadlift|rdl/.test(texte)) return "Ischios-jambiers";
+  if (/fessier|hip thrust|glute/.test(texte)) return "Fessiers";
+  if (/mollet|calf/.test(texte)) return "Mollets";
+  if (/abdo|crunch|planche|gainage/.test(texte)) return "Abdominaux";
+  return "Autres / non classé";
+}
+
+function choisirGroupeMusculaire(nom) {
+  const groupeConnu = groupeMusculaire(nom);
+  if (groupeConnu !== "Autres / non classé") return groupeConnu;
+  const groupes = [...new Set(catalogueComplet().map((exercice) => exercice.groupe_principal))].sort();
+  const choix = prompt(`Groupe principal de « ${nom} » :\n${groupes.map((groupe, index) => `${index + 1}. ${groupe}`).join("\n")}\nEntre le numéro ou le nom du groupe.`, "");
+  if (choix === null) return null;
+  const index = Number(choix.trim()) - 1;
+  const groupeChoisi = Number.isInteger(index) && index >= 0 && index < groupes.length
+    ? groupes[index]
+    : groupes.find((groupe) => groupe.toLocaleLowerCase("fr-FR") === choix.trim().toLocaleLowerCase("fr-FR"));
+  if (!groupeChoisi) alert("Choisis un groupe de la liste pour que ses séries soient comptées correctement.");
+  return groupeChoisi || null;
+}
+
+function volumeMusculaireExercice(exercice) {
+  const groupe = groupeMusculaire(exercice.nom, exercice.groupePrincipal);
+  const seriesDetail = exercice.seriesDetail || [];
+  const seriesValides = seriesDetail.filter((serie) => !serie.echauffement && Number(serie.repetitions) > 0);
+  return {
+    groupe,
+    volume: Number(exercice.volume) || seriesValides.reduce((total, serie) => total + Number(serie.charge || 0) * Number(serie.repetitions), 0),
+    series: seriesDetail.length ? seriesValides.length : Number(exercice.series) || 0,
+  };
 }
 
 function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
@@ -886,7 +920,7 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
       const rir = exercice.seriesDetail?.filter((serie) => !serie.echauffement).at(-1)?.rir ?? exercice.rir ?? null;
       const nomSuivi = exercice.programmeNom || exercice.nom;
       if (!performances.has(nomSuivi)) performances.set(nomSuivi, []);
-       performances.get(nomSuivi).push({ volume, rir, objectif: exercice.objectif || sessions[seance.jour]?.exercises.find(([nom]) => nom === nomSuivi)?.[1] || "", ressenti: exercice.ressenti, nomEffectue: exercice.nom, ordre, total: seance.exercices.length, energie: seance.energie, sommeil: seance.sommeil, semaineLegere: seance.semaineLegere });
+      performances.get(nomSuivi).push({ volume, rir, groupePrincipal: exercice.groupePrincipal, objectif: exercice.objectif || sessions[seance.jour]?.exercises.find(([nom]) => nom === nomSuivi)?.[1] || "", ressenti: exercice.ressenti, nomEffectue: exercice.nom, ordre, total: seance.exercices.length, energie: seance.energie, sommeil: seance.sommeil, semaineLegere: seance.semaineLegere });
     });
   });
   if (performances.size === 0) {
@@ -894,7 +928,7 @@ function afficherAnalyse(forceOpen = false, programmeFiltre = "tous") {
   } else {
     const tendances = [];
     const lignes = [...performances.entries()].sort().map(([nom, valeurs]) => {
-      const groupe = groupeMusculaire(nom);
+      const groupe = groupeMusculaire(nom, valeurs.at(-1)?.groupePrincipal);
       const valeursComparables = valeurs.filter((item) => !item.semaineLegere);
       if (valeursComparables.length < 4) return `<article class="analysis-entry"><strong>${nom}</strong><p class="muted">${groupe} · ${valeursComparables.length} passage(s) comparables : encore trop tôt pour conclure.</p></article>`;
       const recent = valeursComparables.slice(-3).reduce((total, item) => total + item.volume, 0) / 3;
@@ -1193,9 +1227,7 @@ function afficherStatistiques(forceOpen = false, programmeFiltre = "tous") {
           meilleuresCharges.set(exercice.nom, exercice);
         }
         if (date >= debutQuatreSemaines) {
-          const groupe = groupeMusculaire(exercice.nom);
-          const volumeExercice = Number(exercice.volume) || (exercice.seriesDetail || []).filter((serie) => !serie.echauffement).reduce((total, serie) => total + serie.charge * serie.repetitions, 0);
-          const seriesExercice = exercice.seriesDetail?.filter((serie) => !serie.echauffement).length || Number(exercice.series) || 0;
+          const { groupe, volume: volumeExercice, series: seriesExercice } = volumeMusculaireExercice(exercice);
           const recent = groupesQuatreSemaines.get(groupe) || { volume: 0, series: 0 };
           groupesQuatreSemaines.set(groupe, { volume: recent.volume + volumeExercice, series: recent.series + seriesExercice });
           if (date >= startOfWeek) {
@@ -2550,6 +2582,8 @@ function renderDay(day, brouillon = null) {
       : null;
     const nomEffectif = ancienExercice?.nom || name;
     card.querySelector(".exercise-name").textContent = nomEffectif;
+    exerciseCard.dataset.groupePrincipal = ancienExercice?.groupePrincipal || groupeMusculaire(nomEffectif);
+    if (estAjoute) card.querySelector(".exercise-note").textContent = `${note} · Groupe principal : ${exerciseCard.dataset.groupePrincipal}`;
     configurerPoidsCorps(exerciseCard, nomEffectif, ancienExercice?.poidsCorps);
     card.querySelector(".bodyweight-input").addEventListener("input", () => {
       updateVolume(exerciseCard);
@@ -2621,13 +2655,30 @@ function renderDay(day, brouillon = null) {
           selectVariante.value = exerciseCard.querySelector(".exercise-name").textContent;
           return;
         }
+        nouveauNom = nouveauNom.trim();
+        if (!nouveauNom) {
+          selectVariante.value = exerciseCard.querySelector(".exercise-name").textContent;
+          return;
+        }
+      }
+      const ancienNom = exerciseCard.querySelector(".exercise-name").textContent;
+      const groupePrincipal = nouveauNom === ancienNom
+        ? exerciseCard.dataset.groupePrincipal
+        : choisirGroupeMusculaire(nouveauNom);
+      if (!groupePrincipal) {
+        selectVariante.value = ancienNom;
+        return;
+      }
+      if (![...selectVariante.options].some((option) => option.value === nouveauNom)) {
         const option = document.createElement("option");
         option.value = nouveauNom;
         option.textContent = nouveauNom;
         selectVariante.insertBefore(option, autreOption);
-        selectVariante.value = nouveauNom;
       }
+      selectVariante.value = nouveauNom;
       exerciseCard.querySelector(".exercise-name").textContent = nouveauNom;
+      exerciseCard.dataset.groupePrincipal = groupePrincipal;
+      if (estAjoute) exerciseCard.querySelector(".exercise-note").textContent = `${note} · Groupe principal : ${exerciseCard.dataset.groupePrincipal}`;
       const derniere = trouverDernierePerformance(nouveauNom);
       configurerPoidsCorps(exerciseCard, nouveauNom, derniere?.poidsCorps);
       exerciseCard.querySelector(".last-performance").textContent = texteDernierePerformance(derniere);
@@ -2752,12 +2803,14 @@ function renderDay(day, brouillon = null) {
   ajouterExerciceLibre.className = "backup-button";
   ajouterExerciceLibre.textContent = day === SEANCE_LIBRE_JOUR ? "+ Ajouter un exercice" : "+ Ajouter à cette séance";
   ajouterExerciceLibre.addEventListener("click", () => {
-    const nom = prompt("Nom de l’exercice fait en dehors du programme :", "");
+    const nom = prompt("Nom de l’exercice à ajouter (ex. Tractions pronation) :", "");
     if (!nom?.trim()) return;
+    const groupePrincipal = choisirGroupeMusculaire(nom.trim());
+    if (!groupePrincipal) return;
     sauvegarderSeanceEnCours(day, session);
     const brouillonAjoute = getSeanceEnCours();
     brouillonAjoute.exercices.push({
-      nom: nom.trim(), programmeNom: nom.trim(), ajoute: true, objectif: "3 × 10",
+      nom: nom.trim(), programmeNom: nom.trim(), groupePrincipal, ajoute: true, objectif: "3 × 10",
       noteProgramme: "Ajouté pendant la séance", restSeconds: 90, coefficientCharge: 1,
       charge: 0, series: 0, repetitions: 0, seriesDetail: [], volume: 0,
       passe: false, termine: false, supersetAvec: "",
