@@ -1512,6 +1512,17 @@ function sauvegarderProgrammeActif() {
   sauvegarderProgrammes(programmes);
 }
 
+function terminerRepriseExpiree() {
+  if (!programmeActif?.repriseInitiale || !programmeActif.semaineLegere) return;
+  const premiereSeance = getSeancesRealisees()
+    .filter((seance) => seance.programmeId === programmeActif.id && seance.semaineLegere && !Number.isNaN(new Date(seance.date).getTime()))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+  if (!premiereSeance || debutSemaine(new Date()).getTime() <= debutSemaine(new Date(premiereSeance.date)).getTime()) return;
+  programmeActif.semaineLegere = false;
+  programmeActif.repriseInitiale = false;
+  sauvegarderProgrammeActif();
+}
+
 function basculerSemaineLegere() {
   if (!programmeActif) return;
   programmeActif.semaineLegere = !programmeActif.semaineLegere;
@@ -1710,7 +1721,7 @@ function creerProgrammePPLPPReequilibre() {
   activerProgramme(copie.id);
   programsPanel.classList.add("hidden");
   afficherProgrammes();
-  alert("Nouveau PPLPP ajouté et activé. La première semaine est allégée : vérifie tes charges et garde 3–4 reps en réserve. Désactive « semaine légère » après la reprise si tout va bien.");
+  alert("Nouveau PPLPP ajouté et activé. La première semaine d’entraînement est allégée : vérifie tes charges et garde 3–4 reps en réserve. La reprise prendra fin automatiquement la semaine suivante.");
 }
 
 function creerProgrammeDebutante() {
@@ -2111,6 +2122,7 @@ function signalerFinRepos() {
 }
 
 function renderDay(day, brouillon = null) {
+  terminerRepriseExpiree();
   selector.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.textContent === day);
   });
@@ -2139,7 +2151,7 @@ function renderDay(day, brouillon = null) {
   const semaineLegere = day !== SEANCE_LIBRE_JOUR && Boolean(programmeActif?.semaineLegere);
   const derniereSeance = trouverDerniereSeance(day);
   const texteSemaineLegere = programmeActif?.repriseInitiale
-    ? "Semaine de reprise : une série de moins et charges externes proposées environ 10 % plus légères. Garde 3–4 reps en réserve ; termine la reprise dans Mes programmes quand tu es prêt."
+    ? "Semaine de reprise : une série de moins et charges externes proposées environ 10 % plus légères. Garde 3–4 reps en réserve ; la reprise se termine automatiquement la semaine suivante."
     : "Semaine légère : une série de moins et charges externes proposées environ 10 % plus légères. Ajuste librement selon ta forme.";
   workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? `<p class='deload-banner'>${texteSemaineLegere}</p>` : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
   const brouillonTrouve = brouillon || getSeanceEnCours();
