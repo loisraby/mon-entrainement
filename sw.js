@@ -1,9 +1,11 @@
-const CACHE_NAME = "mon-entrainement-v13";
+const CACHE_NAME = "mon-entrainement-v14";
 const APP_FILES = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
+  "./exercise-catalog.js",
+  "./workout-builder.js",
   "./programme.json",
   "./manifest.webmanifest",
 ];

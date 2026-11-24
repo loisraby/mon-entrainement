@@ -547,6 +547,7 @@ function exporterHistorique() {
     objectifCalories: getObjectifCalories(),
     profilNutrition: JSON.parse(localStorage.getItem(PROFIL_NUTRITION_KEY) || "null"),
     mensurationsConfigurees: getMensurationsConfigurees(),
+    exercicesPersonnalises: exercicesPersonnalises(),
     seanceEnCours: getSeanceEnCours(),
   };
   const fichier = new Blob([JSON.stringify(sauvegarde, null, 2)], {
@@ -585,6 +586,7 @@ function importerHistorique(event) {
         else localStorage.removeItem(NOTES_EXERCICES_KEY);
         if (Array.isArray(contenu.mesures)) localStorage.setItem(MESURES_KEY, JSON.stringify(contenu.mesures));
         if (Array.isArray(contenu.mensurationsConfigurees)) localStorage.setItem(MENSURATIONS_CONFIG_KEY, JSON.stringify(contenu.mensurationsConfigurees));
+        if (Array.isArray(contenu.exercicesPersonnalises)) localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify(contenu.exercicesPersonnalises.filter(exercicePersonnaliseValide)));
         if (contenu.profilNutrition && typeof contenu.profilNutrition === "object") localStorage.setItem(PROFIL_NUTRITION_KEY, JSON.stringify(contenu.profilNutrition));
         if (Number(contenu.objectifCalories) > 0) localStorage.setItem(OBJECTIF_CALORIES_KEY, String(contenu.objectifCalories));
         if (contenu.seanceEnCours && typeof contenu.seanceEnCours === "object") localStorage.setItem(DRAFT_KEY, JSON.stringify(contenu.seanceEnCours));
@@ -1378,9 +1380,11 @@ function encoderProgrammePartage(programme) {
   const contenu = {
     version: 1,
     nom: programme.nom,
+    exercicesPersonnalises: exercicesPersonnalises().filter((exercice) => Object.values(programme.seances || {}).some((seance) => seance.exercises?.some((item) => item[0] === exercice.nom))),
     seances: Object.fromEntries(Object.entries(programme.seances || {}).map(([jour, seance]) => [jour, {
       title: seance.title,
       duration: seance.duration || "",
+      style: seance.style || "hypertrophie",
       exercises: (seance.exercises || []).map((exercice) => {
         const copie = [...exercice];
         copie[2] = null; // Les charges de référence ne sont pas celles de la personne qui reçoit le lien.
@@ -1446,7 +1450,7 @@ function decoderProgrammePartage(code) {
         || !Number.isFinite(coefficient) || coefficient <= 0 || coefficient > 10) throw new Error("Exercice invalide");
       return [exercice[0], exercice[1], null, exercice[3] ?? "", repos, coefficient, exercice[6] ?? ""];
     });
-    seances[jour] = { title: seance.title, duration: seance.duration, exercises };
+    seances[jour] = { title: seance.title, duration: seance.duration, style: TRAINING_PROFILES[seance.style] ? seance.style : "hypertrophie", exercises };
   });
   const joursSansMusculation = {};
   for (const [jour, details] of Object.entries(contenu.joursSansMusculation || {})) {
@@ -1454,7 +1458,16 @@ function decoderProgrammePartage(code) {
       || !texteValide(details?.description, 500)) throw new Error("Jour invalide");
     joursSansMusculation[jour] = { title: details.title, description: details.description };
   }
-  return { nom: contenu.nom, seances, joursSansMusculation };
+  const personnalises = Array.isArray(contenu.exercicesPersonnalises) ? contenu.exercicesPersonnalises : [];
+  if (personnalises.length > 50 || personnalises.some((exercice) =>
+    !texteValide(exercice?.id, 100, true) || !texteValide(exercice?.nom, 80, true)
+    || !texteValide(exercice?.groupe_principal, 40, true)
+    || !Array.isArray(exercice?.groupes_secondaires) || exercice.groupes_secondaires.length > 8
+    || exercice.groupes_secondaires.some((groupe) => !texteValide(groupe, 40, true))
+    || !["Polyarticulaire", "Isolation"].includes(exercice?.categorie_mouvement?.type)
+    || !["Poussée", "Tirage", "Jambes", "Tronc"].includes(exercice?.categorie_mouvement?.famille)
+    || !texteValide(exercice?.equipement, 40, true))) throw new Error("Exercice personnalisé invalide");
+  return { nom: contenu.nom, seances, joursSansMusculation, exercicesPersonnalises: personnalises };
 }
 
 function demanderLienProgramme() {
@@ -1513,6 +1526,11 @@ function importerProgrammeDepuisLien(code = null) {
   };
   const programmes = getProgrammes();
   programmes.push(programme);
+  if (contenu.exercicesPersonnalises.length) {
+    const actuels = exercicesPersonnalises();
+    const nouveaux = contenu.exercicesPersonnalises.filter((exercice) => ![...EXERCISE_CATALOG, ...actuels].some((item) => item.nom.toLocaleLowerCase("fr-FR") === exercice.nom.toLocaleLowerCase("fr-FR")));
+    localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify([...actuels, ...nouveaux]));
+  }
   sauvegarderProgrammes(programmes);
   activerProgramme(programme.id);
   alert("Programme ajouté ! Renseigne tes propres charges pendant les séances.");
@@ -1766,16 +1784,13 @@ function creerProgrammeDebutante() {
 }
 
 function creerProgrammeVide() {
+  if (getSeanceEnCours()) { alert("Termine ou annule d’abord la séance en cours avant de créer un programme."); return; }
   const nom = prompt("Nom de ton programme :", "Mon programme");
   if (!nom?.trim()) return;
-  const programmes = getProgrammes().filter((programme) => programme.id !== "hypertrophie");
+  const programmes = getProgrammes();
   const programme = { id: `programme-${Date.now()}`, nom: nom.trim(), seances: {} };
   programmes.push(programme);
   sauvegarderProgrammes(programmes);
-
-  const mesuresSansModele = getMesures().filter((mesure) => mesure.source !== "historique");
-  localStorage.setItem(MESURES_KEY, JSON.stringify(mesuresSansModele));
-
   activerProgramme(programme.id, false);
   alert("Programme vierge créé. Ajoute maintenant tes séances et tes exercices.");
   ouvrirEditeurProgramme();
@@ -1825,6 +1840,7 @@ function supprimerProgramme(id) {
 
 function ouvrirEditeurProgramme() {
   if (!programmeActif) return;
+  if (getSeanceEnCours()) { alert("Termine ou annule d’abord la séance en cours avant de modifier le programme."); return; }
   jourEdite = days.find((day) => sessions[day]) || days[0];
   programList.classList.add("hidden");
   document.querySelector("#duplicate-program").parentElement.classList.add("hidden");
@@ -1861,10 +1877,11 @@ function sauvegarderModificationsEditeur(alerter = false) {
   if (seanceEditee) {
     seanceEditee.title = programEditor.querySelector(".session-title-input").value.trim() || `Séance ${jourEdite}`;
     seanceEditee.duration = programEditor.querySelector(".session-duration-input").value.trim();
+    seanceEditee.style = programEditor.querySelector(".editor-style")?.value || seanceEditee.style || "hypertrophie";
     seanceEditee.exercises = [...programEditor.querySelectorAll(".editor-exercise")].map((ligne) => [
       ligne.querySelector(".edit-exercise-name").value.trim() || "Exercice",
       ligne.querySelector(".edit-exercise-target").value.trim() || "3 × 10",
-      Number(ligne.querySelector(".edit-exercise-weight").value) || 0,
+      ligne.querySelector(".edit-exercise-weight").value === "" ? null : Number(ligne.querySelector(".edit-exercise-weight").value),
       ligne.querySelector(".edit-exercise-note").value.trim(),
       Number(ligne.querySelector(".edit-exercise-rest").value) || 90,
       Number(ligne.querySelector(".edit-exercise-coefficient").value) || 1,
@@ -1873,6 +1890,165 @@ function sauvegarderModificationsEditeur(alerter = false) {
   }
   sauvegarderProgrammeActif();
   if (alerter) alert("Programme enregistré !");
+}
+
+function afficherVolumeEditeur() {
+  const zone = programEditor.querySelector(".editor-volume-results");
+  if (!zone || !sessions[jourEdite]) return;
+  const exercices = [...programEditor.querySelectorAll(".editor-exercise")].map((ligne) => [
+    ligne.querySelector(".edit-exercise-name").value,
+    ligne.querySelector(".edit-exercise-target").value,
+  ]);
+  const volumes = seriesDirectesParGroupe(sessions, jourEdite, exercices);
+  const cibles = [...programEditor.querySelectorAll(".library-groups input:checked")].map((input) => input.value);
+  cibles.forEach((groupe) => { volumes[groupe] ||= { semaine: 0, seance: 0 }; });
+  const lignes = Object.entries(volumes).sort(([a], [b]) => a.localeCompare(b, "fr-FR"));
+  zone.replaceChildren();
+  lignes.forEach(([groupe, valeur]) => {
+    const ligne = document.createElement("p");
+    const seuilBas = sessions[jourEdite].style === "hypertrophie" ? 10 : 6;
+    const statut = valeur.semaine > 20 ? "Volume élevé : vérifie ta récupération" : valeur.semaine < seuilBas ? "Volume modeste si c’est une priorité" : "";
+    const seanceLongue = valeur.seance > 10 ? " · Beaucoup sur cette séance" : "";
+    ligne.textContent = `${groupe} : ${valeur.seance} séries ici · ${valeur.semaine} sur la semaine${statut ? ` · ${statut}` : ""}${seanceLongue}`;
+    zone.append(ligne);
+  });
+  if (!lignes.length) zone.textContent = "Ajoute un exercice pour voir les séries directes par groupe.";
+}
+
+function afficherCatalogueEditeur(session) {
+  const details = document.createElement("details");
+  details.className = "editor-library";
+  details.open = session.exercises.length === 0;
+  const summary = document.createElement("summary");
+  summary.textContent = "+ Choisir des exercices dans le catalogue";
+  const intro = document.createElement("p");
+  intro.className = "muted";
+  intro.textContent = "Choisis les muscles ciblés, puis recherche un exercice. Les mouvements polyarticulaires apparaissent en premier. Les réglages proposés restent modifiables plus bas.";
+  const styleLabel = document.createElement("label");
+  styleLabel.textContent = "Objectif de la séance";
+  const style = document.createElement("select");
+  style.className = "editor-style";
+  Object.entries(TRAINING_PROFILES).forEach(([id, profil]) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = profil.label;
+    style.append(option);
+  });
+  style.value = session.style || "hypertrophie";
+  style.addEventListener("change", () => { sauvegarderModificationsEditeur(); afficherVolumeEditeur(); });
+  styleLabel.append(style);
+  const groupes = document.createElement("div");
+  groupes.className = "library-groups";
+  [...new Set(catalogueComplet().map((exercice) => exercice.groupe_principal))].sort().forEach((groupe) => {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = groupe;
+    input.addEventListener("change", () => { afficherResultats(); afficherVolumeEditeur(); });
+    label.append(input, document.createTextNode(groupe));
+    groupes.append(label);
+  });
+  const filtres = document.createElement("div");
+  filtres.className = "library-filters";
+  const recherche = document.createElement("input");
+  recherche.type = "search";
+  recherche.placeholder = "Rechercher un exercice…";
+  const equipement = document.createElement("select");
+  ["Tout équipement", ...new Set(catalogueComplet().map((exercice) => exercice.equipement))].forEach((nom) => {
+    const option = document.createElement("option");
+    option.value = nom === "Tout équipement" ? "" : nom;
+    option.textContent = nom;
+    equipement.append(option);
+  });
+  filtres.append(recherche, equipement);
+  const resultats = document.createElement("div");
+  resultats.className = "library-results";
+  const infos = document.createElement("p");
+  infos.className = "muted";
+  function afficherResultats() {
+    const selection = [...groupes.querySelectorAll("input:checked")].map((input) => input.value);
+    const query = recherche.value.trim().toLocaleLowerCase("fr-FR");
+    const correspondances = catalogueComplet().filter((exercice) =>
+      (!selection.length || selection.includes(exercice.groupe_principal) || exercice.groupes_secondaires.some((groupe) => selection.includes(groupe)))
+      && (!equipement.value || exercice.equipement === equipement.value)
+      && (!query || exercice.nom.toLocaleLowerCase("fr-FR").includes(query)));
+    correspondances.sort((a, b) => (a.categorie_mouvement.type === "Polyarticulaire" ? 0 : 1) - (b.categorie_mouvement.type === "Polyarticulaire" ? 0 : 1) || a.nom.localeCompare(b.nom, "fr-FR"));
+    infos.textContent = `${correspondances.length} exercice(s) · ${Math.min(correspondances.length, 40)} affiché(s)`;
+    resultats.replaceChildren();
+    correspondances.slice(0, 40).forEach((exercice) => {
+      const ligne = document.createElement("div");
+      ligne.className = "library-result";
+      const texte = document.createElement("span");
+      texte.textContent = `${exercice.nom} · ${exercice.groupe_principal} · ${exercice.equipement} · ${exercice.categorie_mouvement.type}`;
+      const bouton = document.createElement("button");
+      bouton.type = "button";
+      bouton.textContent = "Ajouter";
+      bouton.addEventListener("click", () => {
+        sauvegarderModificationsEditeur();
+        const suggestion = reglagesSuggere(exercice, sessions[jourEdite].style);
+        sessions[jourEdite].exercises.push([exercice.nom, `${suggestion.series} × ${suggestion.reps}`, null, `Repère : RIR ${suggestion.rir}. Ajuste selon ta forme.`, suggestion.repos, 1, ""]);
+        sauvegarderProgrammeActif();
+        afficherEditeurProgramme();
+      });
+      ligne.append(texte, bouton);
+      resultats.append(ligne);
+    });
+  }
+  recherche.addEventListener("input", afficherResultats);
+  equipement.addEventListener("change", afficherResultats);
+  const custom = document.createElement("details");
+  custom.className = "library-custom";
+  const customTitle = document.createElement("summary");
+  customTitle.textContent = "+ Créer un exercice personnalisé";
+  const nom = document.createElement("input");
+  nom.placeholder = "Nom de l’exercice";
+  nom.maxLength = 80;
+  const groupe = document.createElement("select");
+  [...new Set(catalogueComplet().map((exercice) => exercice.groupe_principal))].sort().forEach((valeur) => {
+    const option = document.createElement("option"); option.value = valeur; option.textContent = valeur; groupe.append(option);
+  });
+  const secondaires = document.createElement("input");
+  secondaires.placeholder = "Autres groupes, séparés par une virgule (facultatif)";
+  const type = document.createElement("select");
+  ["Polyarticulaire", "Isolation"].forEach((valeur) => {
+    const option = document.createElement("option"); option.value = valeur; option.textContent = valeur; type.append(option);
+  });
+  const famille = document.createElement("select");
+  ["Poussée", "Tirage", "Jambes", "Tronc"].forEach((valeur) => {
+    const option = document.createElement("option"); option.value = valeur; option.textContent = valeur; famille.append(option);
+  });
+  const equipementCustom = document.createElement("select");
+  ["Poids du corps", "Haltères", "Barre", "Machine", "Poulie", "Autre"].forEach((valeur) => {
+    const option = document.createElement("option"); option.value = valeur; option.textContent = valeur; equipementCustom.append(option);
+  });
+  const enregistrer = document.createElement("button");
+  enregistrer.type = "button";
+  enregistrer.textContent = "Enregistrer et ajouter";
+  enregistrer.addEventListener("click", () => {
+    const nomValide = nom.value.trim();
+    if (!nomValide || exerciceDuCatalogue(nomValide)) { alert("Choisis un nom inédit pour cet exercice."); return; }
+    const exercice = {
+      id: `personnalise-${Date.now()}`,
+      nom: nomValide,
+      groupe_principal: groupe.value,
+      groupes_secondaires: secondaires.value.split(",").map((valeur) => valeur.trim()).filter(Boolean),
+      categorie_mouvement: { type: type.value, famille: famille.value },
+      equipement: equipementCustom.value,
+    };
+    sauvegarderModificationsEditeur();
+    localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify([...exercicesPersonnalises(), exercice]));
+    const suggestion = reglagesSuggere(exercice, sessions[jourEdite].style);
+    sessions[jourEdite].exercises.push([exercice.nom, `${suggestion.series} × ${suggestion.reps}`, null, `Repère : RIR ${suggestion.rir}. Ajuste selon ta forme.`, suggestion.repos, 1, ""]);
+    sauvegarderProgrammeActif();
+    afficherEditeurProgramme();
+  });
+  custom.append(customTitle, nom, groupe, secondaires, type, famille, equipementCustom, enregistrer);
+  const sources = document.createElement("p");
+  sources.className = "muted library-sources";
+  sources.innerHTML = 'Repères souples : <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/" target="_blank" rel="noopener">ACSM 2026</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/39205815/" target="_blank" rel="noopener">repos</a>. Le RIR et les volumes ne sont pas des seuils exacts.';
+  details.append(summary, intro, styleLabel, groupes, filtres, infos, resultats, custom, sources);
+  afficherResultats();
+  return details;
 }
 
 function afficherEditeurProgramme() {
@@ -1905,7 +2081,7 @@ function afficherEditeurProgramme() {
     ajouter.className = "backup-button";
     ajouter.textContent = "Ajouter une séance ce jour";
     ajouter.addEventListener("click", () => {
-      sessions[jourEdite] = { title: `Séance ${jourEdite}`, duration: "", exercises: [] };
+      sessions[jourEdite] = { title: `Séance ${jourEdite}`, duration: "", style: "hypertrophie", exercises: [] };
       sauvegarderProgrammeActif();
       afficherEditeurProgramme();
     });
@@ -1916,6 +2092,17 @@ function afficherEditeurProgramme() {
     const aideCharges = document.createElement("p");
     aideCharges.className = "muted";
     aideCharges.textContent = "Coefficient de charge : 1 garde le poids affiché. Exemple : 29,5 affichés équivalant à 65 → 2,2. Pour une machine dont l’équivalence est inconnue, garde 1 : le volume reste un repère, pas une mesure physique exacte.";
+    const catalogue = afficherCatalogueEditeur(session);
+    const volume = document.createElement("div");
+    volume.className = "editor-volume";
+    const titreVolume = document.createElement("h4");
+    titreVolume.textContent = "Volume prévu par groupe";
+    const aideVolume = document.createElement("p");
+    aideVolume.className = "muted";
+    aideVolume.textContent = "Séries directes du groupe principal uniquement, sur les séances prévues cette semaine. Les muscles secondaires, la fatigue et tes autres sports ne sont pas additionnés.";
+    const resultatsVolume = document.createElement("div");
+    resultatsVolume.className = "editor-volume-results";
+    volume.append(titreVolume, aideVolume, resultatsVolume);
     const exercices = document.createElement("div");
     exercices.className = "editor-exercises";
     session.exercises.forEach((exercice, index) => {
@@ -1983,16 +2170,8 @@ function afficherEditeurProgramme() {
       ligne.append(ordre);
       exercices.append(ligne);
     });
-    const ajouterExercice = document.createElement("button");
-    ajouterExercice.type = "button";
-    ajouterExercice.className = "backup-button";
-    ajouterExercice.textContent = "+ Ajouter un exercice";
-    ajouterExercice.addEventListener("click", () => {
-      session.exercises.push(["Nouvel exercice", "3 × 10", 0, "", 90, 1, ""]);
-      sauvegarderProgrammeActif();
-      afficherEditeurProgramme();
-    });
-    programEditor.append(titreSeance, duree, aideCharges, exercices, ajouterExercice);
+    programEditor.append(titreSeance, duree, catalogue, aideCharges, exercices, volume);
+    afficherVolumeEditeur();
   }
 
   const actions = document.createElement("div");
@@ -2009,6 +2188,9 @@ function afficherEditeurProgramme() {
   fermer.addEventListener("click", fermerEditeurProgramme);
   actions.append(enregistrer, fermer);
   programEditor.append(actions);
+  programEditor.oninput = (event) => {
+    if (event.target.closest(".editor-exercise")) afficherVolumeEditeur();
+  };
 }
 
 async function chargerProgramme() {

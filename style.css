@@ -351,6 +351,25 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 .editor-exercise { border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 9px; padding: 12px; }
 .editor-exercise-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .editor-exercise-actions button { width: auto; }
+.editor-library { border: 1px solid var(--line); border-radius: 14px; margin: 16px 0; padding: 12px; }
+.editor-library summary, .library-custom summary { cursor: pointer; font-weight: 800; }
+.editor-library > p { font-size: .85rem; line-height: 1.4; }
+.editor-library > label { display: block; font-weight: 700; margin: 14px 0; }
+.editor-library > label select { margin-top: 6px; }
+.library-groups { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+.library-groups label { align-items: center; border: 1px solid var(--line); border-radius: 20px; display: flex; font-size: .78rem; gap: 5px; padding: 6px 9px; }
+.library-groups input { margin: 0; width: auto; }
+.library-filters { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.library-results { display: grid; gap: 6px; max-height: 350px; overflow-y: auto; }
+.library-result { align-items: center; border-bottom: 1px solid var(--line); display: flex; font-size: .83rem; gap: 8px; justify-content: space-between; padding: 7px 0; }
+.library-result span { line-height: 1.35; }
+.library-result button, .library-custom button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; color: var(--text); flex: none; font: inherit; padding: 7px 9px; width: auto; }
+.library-custom { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.library-custom input, .library-custom select { margin: 6px 0; }
+.library-sources a { color: var(--blue); }
+.editor-volume { background: var(--surface-2); border-radius: 12px; margin-top: 16px; padding: 12px; }
+.editor-volume h4 { margin: 0; }
+.editor-volume p { font-size: .84rem; line-height: 1.4; margin: 7px 0; }
 .program-actions { margin-top: 14px; }
 .program-actions .finish-button { flex: 1 1 210px; }
 .program-link-import { border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; padding: 12px; }
