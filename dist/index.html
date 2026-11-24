@@ -38,6 +38,14 @@
       </header>
 
       <nav id="day-selector" class="day-selector" aria-label="Choisir un jour"></nav>
+      <div class="model-picker">
+        <label for="session-model">Autre séance aujourd’hui</label>
+        <div class="model-picker-actions">
+          <select id="session-model" aria-label="Modèle de séance"></select>
+          <button id="show-session-model" type="button">Afficher</button>
+        </div>
+        <p class="muted">Choisis un modèle d’un autre jour. Chaque séance terminée aura sa propre durée et son propre bilan dans l’historique.</p>
+      </div>
       <section id="draft-panel" class="draft-panel hidden" aria-live="polite">
         <strong>Séance en cours retrouvée</strong>
         <p id="draft-message" class="muted"></p>
