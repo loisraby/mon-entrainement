@@ -1,4 +1,4 @@
-const CACHE_NAME = "mon-entrainement-v11";
+const CACHE_NAME = "mon-entrainement-v12";
 const APP_FILES = [
   "./",
   "./index.html",
