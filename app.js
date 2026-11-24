@@ -131,6 +131,31 @@ const draftMessage = document.querySelector("#draft-message");
 const toolsButton = document.querySelector("#tools-button");
 const toolsPanel = document.querySelector("#tools-panel");
 const todayIndex = (new Date().getDay() + 6) % 7;
+const sessionModel = document.querySelector("#session-model");
+
+function remplirChoixModele() {
+  sessionModel.innerHTML = "";
+  days.filter((day) => sessions?.[day]).forEach((day) => {
+    const option = document.createElement("option");
+    option.value = day;
+    option.textContent = `${day} — ${sessions[day].title}`;
+    sessionModel.append(option);
+  });
+}
+
+function choisirModele(day) {
+  if (!day) return;
+  const brouillon = getSeanceEnCours();
+  if (brouillon && (brouillon.jour !== day || (brouillon.programmeId && brouillon.programmeId !== programmeActif?.id))) {
+    alert(`Une séance « ${brouillon.nom} » est en cours. Termine-la ou annule-la avant d’en commencer une autre.`);
+    sessionModel.value = brouillon.jour;
+    afficherSeanceEnCours();
+    return;
+  }
+  renderDay(day, brouillon);
+}
+
+document.querySelector("#show-session-model").addEventListener("click", () => choisirModele(sessionModel.value));
 
 toolsButton.addEventListener("click", () => {
   const estOuvert = !toolsPanel.classList.contains("hidden");
@@ -1499,6 +1524,7 @@ function activerProgramme(id, afficher = true) {
   if (!programme) return;
   programmeActif = programme;
   sessions = programme.seances;
+  remplirChoixModele();
   localStorage.setItem(PROGRAMME_ACTIF_KEY, id);
   if (afficher) renderDay(days[todayIndex]);
 }
@@ -1995,7 +2021,9 @@ async function chargerProgramme() {
   }
   const idActif = localStorage.getItem(PROGRAMME_ACTIF_KEY);
   activerProgramme(programmes.some((programme) => programme.id === idActif) ? idActif : programmes[0].id, false);
-  renderDay(days[todayIndex]);
+  const brouillon = getSeanceEnCours();
+  const brouillonActif = brouillon?.programmeId === programmeActif?.id && getSessionDuJour(brouillon.jour);
+  renderDay(brouillonActif ? brouillon.jour : days[todayIndex], brouillonActif ? brouillon : null);
   afficherSeanceEnCours();
   mettreAJourStatutSauvegarde();
   importerProgrammeDepuisLien();
@@ -2123,6 +2151,7 @@ function signalerFinRepos() {
 
 function renderDay(day, brouillon = null) {
   terminerRepriseExpiree();
+  sessionModel.value = sessions?.[day] ? day : "";
   selector.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.textContent === day);
   });
@@ -2511,7 +2540,7 @@ function renderDay(day, brouillon = null) {
 days.forEach((day) => {
   const button = document.createElement("button");
   button.textContent = day;
-  button.addEventListener("click", () => renderDay(day));
+  button.addEventListener("click", () => choisirModele(day));
   selector.append(button);
 });
 
