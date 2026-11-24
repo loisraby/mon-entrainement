@@ -787,13 +787,31 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
   });
   list.append(row);
 }
-function preparerSeriesInitiales({ ancienExercice, dernierePerformance, nom, objectif, chargePlan, semaineLegere }) {
-  const performance = ancienExercice || dernierePerformance;
+function preparerSeriesInitiales({ ancienExercice, dernierePerformance, nom, day, objectif, chargePlan, semaineLegere }) {
+  const force = programmeActif?.type === "force-quatre-jours-v1";
+  const derniereMemeSeance = force && !ancienExercice
+    ? [...getSeancesRealisees()].reverse()
+      .filter((seance) => seance.programmeId === programmeActif.id && seance.jour === day)
+      .flatMap((seance) => seance.exercices || [])
+      .find((exercice) => exercice.nom === nom && !exercice.passe)
+    : null;
+  const performance = ancienExercice || (force ? derniereMemeSeance : dernierePerformance);
   const exercicePoidsCorps = estExercicePoidsCorps(nom);
-  const ancienneConventionPoidsCorps = exercicePoidsCorps && !performance?.poidsCorps;
   const seriesVisees = semaineLegere
     ? Math.max(1, (Number(objectif.split(" ")[0]) || 3) - 1)
     : (Number(objectif.split(" ")[0]) || 3);
+  const nouveauCycleForce = force && !ancienExercice && !derniereMemeSeance;
+  if (nouveauCycleForce) {
+    const test = (programmeActif.testsForce || []).filter((item) => item.nom === nom).at(-1);
+    const facteur = objectif.includes("3–5") ? 0.75 : objectif.includes("5–6") || objectif.includes("6–8") ? 0.65 : null;
+    const chargeTest = !exercicePoidsCorps && test && facteur
+      ? Math.floor(Number(test.estimation) * facteur / 2.5) * 2.5 : null;
+    return Array.from({ length: seriesVisees }, () => ({
+      charge: exercicePoidsCorps ? 0 : chargeTest ?? "",
+      repetitions: "",
+    }));
+  }
+  const ancienneConventionPoidsCorps = exercicePoidsCorps && !performance?.poidsCorps;
   const depuisHistorique = Boolean(performance?.seriesDetail?.length && !ancienneConventionPoidsCorps);
   const chargeSansDetail = ancienneConventionPoidsCorps ? 0 : (performance?.charge ?? chargePlan);
   const chargeInitiale = semaineLegere && !ancienExercice && !exercicePoidsCorps
@@ -825,7 +843,7 @@ function preparerSeriesInitiales({ ancienExercice, dernierePerformance, nom, obj
 }
 
 function updateSessionProgress() {
-  const cards = [...workout.querySelectorAll(".exercise-card")];
+  const cards = [...workout.querySelectorAll(".exercise-card")].filter((card) => card.dataset.optional !== "true");
   const completed = cards.filter((card) => card.classList.contains("completed") || card.classList.contains("skipped")).length;
   const passes = cards.filter((card) => card.classList.contains("skipped")).length;
   const progress = workout.querySelector("#session-progress");
@@ -1580,6 +1598,95 @@ function libelleBoutonSemaineLegere() {
   if (programmeActif?.repriseInitiale && programmeActif.semaineLegere) return "Terminer la semaine de reprise";
   return programmeActif?.semaineLegere ? "Désactiver la semaine légère" : "Activer la semaine légère";
 }
+
+// Même équation que dans l'ancien tableau Madcow. À utiliser sur une série proche du RM réel.
+function estimerUneRepMax(charge, repetitions) {
+  if (!Number.isFinite(charge) || charge <= 0 || !Number.isInteger(repetitions)
+    || repetitions < 1 || repetitions > 10) return null;
+  return charge / (1.0278 - 0.0278 * repetitions);
+}
+
+function creerBlocTestsForce(programme) {
+  const bloc = document.createElement("details");
+  bloc.className = "force-tests";
+  const titre = document.createElement("summary");
+  titre.textContent = "Repères de force et 1RM estimée";
+  const aide = document.createElement("p");
+  aide.className = "muted";
+  aide.textContent = "Note une série maximale propre, de 1 à 10 reps, sans tenter une répétition qui dégrade la technique. Si tu gardais des reps en réserve, ce n’était pas un vrai RM. Pour les tractions et dips, saisis la charge totale : poids du corps + lest, ou poids du corps − assistance.";
+  const formulaire = document.createElement("form");
+  formulaire.className = "force-test-form";
+  const mouvement = document.createElement("select");
+  ["Squat barre", "Développé couché barre", "Soulevé de terre", "Traction lestée ou assistée", "Dips lestés ou barre", "Développé militaire barre"].forEach((nom) => {
+    const option = document.createElement("option");
+    option.value = nom;
+    option.textContent = nom;
+    mouvement.append(option);
+  });
+  const charge = document.createElement("input");
+  charge.type = "number";
+  charge.min = "0.5";
+  charge.step = "0.5";
+  charge.required = true;
+  charge.placeholder = "Charge totale (kg)";
+  charge.setAttribute("aria-label", "Charge totale en kg");
+  const reps = document.createElement("input");
+  reps.type = "number";
+  reps.min = "1";
+  reps.max = "10";
+  reps.step = "1";
+  reps.required = true;
+  reps.placeholder = "Reps (1 à 10)";
+  reps.setAttribute("aria-label", "Nombre de répétitions maximales propres");
+  const ajouter = document.createElement("button");
+  ajouter.type = "submit";
+  ajouter.textContent = "Enregistrer le test";
+  const apercu = document.createElement("p");
+  apercu.className = "muted";
+  const calculer = () => {
+    const estimation = estimerUneRepMax(Number(charge.value), Number(reps.value));
+    if (!estimation) { apercu.textContent = ""; return; }
+    const poidsCorps = estExercicePoidsCorps(mouvement.value);
+    apercu.textContent = `1RM estimée : ${formatPoidsCorps(estimation)} kg${poidsCorps ? " de charge totale (PDC compris). Le lest se choisira selon ton poids du jour." : `. Point de départ indicatif pour les séries lourdes : ${formatPoidsCorps(Math.floor(estimation * 0.75 / 2.5) * 2.5)} à ${formatPoidsCorps(Math.floor(estimation * 0.80 / 2.5) * 2.5)} kg, à ajuster selon les reps et le RIR.`}`;
+  };
+  mouvement.addEventListener("change", calculer);
+  charge.addEventListener("input", calculer);
+  reps.addEventListener("input", calculer);
+  formulaire.append(mouvement, charge, reps, ajouter);
+  formulaire.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const poids = Number(charge.value);
+    const repetitions = Number(reps.value);
+    const estimation = estimerUneRepMax(poids, repetitions);
+    if (!estimation) return;
+    const programmes = getProgrammes();
+    const cible = programmes.find((item) => item.id === programme.id);
+    if (!cible) return;
+    cible.testsForce ||= [];
+    cible.testsForce.push({ date: new Date().toISOString(), nom: mouvement.value, charge: poids, repetitions, estimation });
+    sauvegarderProgrammes(programmes);
+    if (programmeActif?.id === cible.id) programmeActif.testsForce = cible.testsForce;
+    charge.value = "";
+    reps.value = "";
+    apercu.textContent = "Test enregistré. Les prochains tests permettront de suivre la tendance.";
+    afficherTests();
+  });
+  const liste = document.createElement("div");
+  liste.className = "force-test-list";
+  function afficherTests() {
+    liste.replaceChildren();
+    const tests = getProgrammes().find((item) => item.id === programme.id)?.testsForce || [];
+    tests.slice(-6).reverse().forEach((test) => {
+      const ligne = document.createElement("p");
+      ligne.textContent = `${new Date(test.date).toLocaleDateString("fr-FR")} · ${test.nom} : ${formatPoidsCorps(test.charge)} kg × ${test.repetitions} → 1RM estimée ${formatPoidsCorps(test.estimation)} kg`;
+      liste.append(ligne);
+    });
+  }
+  afficherTests();
+  bloc.append(titre, aide, formulaire, apercu, liste);
+  return bloc;
+}
+
 function afficherProgrammes(forceOpen = false) {
   if (!forceOpen && !programsPanel.classList.contains("hidden")) {
     programsPanel.classList.add("hidden");
@@ -1627,6 +1734,7 @@ function afficherProgrammes(forceOpen = false) {
       actions.append(supprimer);
     }
     ligne.append(texte, actions);
+    if (programme.type === "force-quatre-jours-v1") ligne.append(creerBlocTestsForce(programme));
     programList.append(ligne);
   });
   programsPanel.classList.remove("hidden");
@@ -1797,31 +1905,77 @@ function creerProgrammeVide() {
 }
 
 function creerProgrammeForce() {
-  if (!programmeActif) return;
-  const nom = prompt("Nom du programme force :", `${programmeActif.nom} — Force`);
-  if (!nom?.trim()) return;
-  const estPrincipal = (exercice) => /développé|squat|deadlift|rowing|traction|tirage/.test(exercice.toLowerCase());
-  const seancesForce = Object.fromEntries(Object.entries(programmeActif.seances).map(([jour, seance]) => [jour, {
-    ...seance,
-    duration: seance.duration,
-    exercises: seance.exercises.map(([exercice, cible, charge, note]) => {
-      const principal = estPrincipal(exercice);
-      return [
-        exercice,
-        principal ? "4 × 3–5" : "3 × 6–8",
-        charge,
-        `${note || ""}${note ? " · " : ""}Base force : ajuste charge et volume selon ta progression.`,
-        principal ? 180 : 120,
-      ];
-    }),
-  }]));
+  if (getSeanceEnCours()) {
+    alert("Termine ou annule d’abord la séance en cours avant de créer le cycle force.");
+    return;
+  }
   const programmes = getProgrammes();
-  const force = { id: `programme-force-${Date.now()}`, nom: nom.trim(), seances: seancesForce };
+  if (programmes.some((programme) => programme.type === "force-quatre-jours-v1")) {
+    alert("Le cycle force est déjà enregistré dans Mes programmes. Tu peux l’activer quand tu seras prêt.");
+    return;
+  }
+  const exercice = (nom, cible, note, repos) => [nom, cible, null, note, repos, 1, ""];
+  const force = {
+    id: `force-quatre-jours-${Date.now()}`,
+    nom: "Force & hypertrophie — 4 jours",
+    type: "force-quatre-jours-v1",
+    testsForce: [],
+    seances: {
+      Lun: {
+        title: "Jambes A — Squat prioritaire",
+        duration: "~60–70 min · Séries de travail uniquement ; échauffe-toi progressivement. RIR 2 sur le squat.",
+        style: "force",
+        exercises: [
+          exercice("Squat barre", "3 × 3–5", "Mouvement prioritaire · 3–4 min de repos · garde environ 2 reps en réserve.", 210),
+          exercice("Presse à cuisses", "2 × 8–12", "Contrôle l’amplitude · monte la charge quand les deux séries sont propres au haut de la plage.", 150),
+          exercice("Leg extension", "2 × 10–15", "Descente contrôlée · RIR 1–3.", 90),
+          exercice("Calf raise machine", "2 × 10–15", "Facultatif · amplitude complète.", 90),
+          exercice("Crunch poulie", "2 × 10–15", "Facultatif en fin de séance ; tu peux aussi choisir des relevés de jambes.", 90),
+        ],
+      },
+      Mar: {
+        title: "Haut A — Développé couché prioritaire",
+        duration: "~70–80 min · Couché lourd en premier ; dips au poids du corps pour retrouver tes repères.",
+        style: "force",
+        exercises: [
+          exercice("Développé couché barre", "3 × 3–5", "Mouvement prioritaire · 3–4 min de repos · RIR 2.", 210),
+          exercice("Traction lestée ou assistée", "3 × 5–7", "Commence au poids du corps, garde des reps propres sans échec · note le PDC et +0 kg.", 180),
+          exercice("Rowing haltère unilatéral", "2 × 8–12/côté", "Appuie-toi sur le banc pour limiter la fatigue lombaire.", 150),
+          exercice("Dips lestés ou barre", "2 × 6–10", "Repars au poids du corps (+0 kg) ; leste seulement quand l’amplitude est confortable et les reps maîtrisées.", 150),
+          exercice("Élévations latérales haltères", "2 × 12–20", "Contrôle le geste, RIR 1–3.", 90),
+        ],
+      },
+      Jeu: {
+        title: "Jambes B — Soulevé de terre prioritaire",
+        duration: "~65–75 min · Soulevé de terre classique en premier ; ajuste le complément si ski ou randonnée.",
+        style: "force",
+        exercises: [
+          exercice("Soulevé de terre", "2 × 3–5", "Classique · 3–4 min de repos · RIR 2–3, dos stable ; ne force pas une rep qui se dégrade.", 240),
+          exercice("Squat barre", "3 × 5–6", "Passage léger et technique, environ RIR 3 ; sans chercher la charge du lundi.", 180),
+          exercice("Squat bulgare", "2 × 8–10/côté", "Contrôle l’appui ; variante possible : step-up.", 120),
+          exercice("Leg curl couché", "2 × 10–15", "Descente contrôlée · RIR 1–3.", 90),
+          exercice("Extensions lombaires", "2 × 10–15", "Facultatif en fin de séance ; commence au PDC, ajoute un disque seulement si bien maîtrisé.", 120),
+        ],
+      },
+      Ven: {
+        title: "Haut B — Tractions prioritaires",
+        duration: "~70–80 min · Tractions en premier ; couché plus léger que mardi.",
+        style: "force",
+        exercises: [
+          exercice("Traction lestée ou assistée", "3 × 4–6", "Priorité du jour · commence au PDC (+0 kg), 2–3 min de repos, pas d’échec.", 180),
+          exercice("Développé couché barre", "3 × 6–8", "Plus léger que mardi · RIR 2.", 180),
+          exercice("Développé militaire barre", "2 × 6–10", "Charge contrôlée après le couché, sans chercher l’échec.", 150),
+          exercice("Rowing machine (Hammer Strength)", "2 × 8–12", "Tirage horizontal complémentaire.", 120),
+          exercice("Curl barre droite", "2 × 10–15", "Sans élan · monte la charge après avoir consolidé les reps.", 90),
+          exercice("Face pull câble prise corde", "2 × 12–20", "Deltoïdes postérieurs et haut du dos · contrôle le mouvement.", 90),
+        ],
+      },
+    },
+  };
   programmes.push(force);
   sauvegarderProgrammes(programmes);
-  activerProgramme(force.id);
-  programsPanel.classList.add("hidden");
-  alert("Base force créée. Ton programme hypertrophie est conservé ; ouvre l’éditeur pour ajuster les exercices et volumes avant de l’utiliser.");
+  afficherProgrammes(true);
+  alert("Cycle force enregistré dans Mes programmes. Ton programme actuel reste actif ; tu pourras choisir « Utiliser » quand tu seras prêt.");
 }
 
 function supprimerProgramme(id) {
@@ -2383,6 +2537,7 @@ function renderDay(day, brouillon = null) {
     exerciseCard.dataset.chargeCoefficient = coefficientCharge;
     exerciseCard.dataset.originalChargeCoefficient = coefficientCharge;
     exerciseCard.dataset.ajoute = estAjoute;
+    exerciseCard.dataset.optional = /\bfacultatif\b/i.test(note);
     exerciseCard.dataset.target = target;
     exerciseCard.dataset.noteProgramme = note;
     card.querySelector(".exercise-note").textContent = note;
@@ -2495,6 +2650,7 @@ function renderDay(day, brouillon = null) {
       ancienExercice,
       dernierePerformance,
       nom: nomEffectif,
+      day,
       objectif: target,
       chargePlan: weight,
       semaineLegere,
@@ -2667,7 +2823,7 @@ function renderDay(day, brouillon = null) {
   workout.querySelector("#finish-button").addEventListener("click", () => {
     const progress = updateSessionProgress();
     const exercicesNonTermines = [...workout.querySelectorAll(".exercise-card")]
-      .filter((card) => !card.classList.contains("completed") && !card.classList.contains("skipped"))
+      .filter((card) => card.dataset.optional !== "true" && !card.classList.contains("completed") && !card.classList.contains("skipped"))
       .map((card) => card.querySelector(".exercise-name").textContent);
     const rappel = exercicesNonTermines.length
       ? `\n\nPas encore terminés :\n• ${exercicesNonTermines.join("\n• ")}`

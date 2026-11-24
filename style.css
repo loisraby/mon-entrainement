@@ -551,3 +551,18 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
   transform: rotate(-45deg);
   white-space: nowrap;
 }
+.force-tests {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #354447);
+  border-radius: 0.75rem;
+}
+.program-entry:has(.force-tests) { flex-wrap: wrap; }
+.program-entry:has(.force-tests) > div:first-child { flex: 1 1 12rem; }
+
+.force-tests summary { cursor: pointer; font-weight: 700; }
+.force-test-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.force-test-form select, .force-test-form input { min-width: 0; flex: 1 1 9rem; }
+.force-test-form button { flex: 1 1 9rem; }
+.force-test-list p { margin: 0.4rem 0; }
