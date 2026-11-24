@@ -33,6 +33,9 @@ jobs:
         with:
           path: ./dist
 
+      - name: Attendre la disponibilité des fichiers
+        run: sleep 15
+
       - name: Mettre le site en ligne
         id: deployment
         uses: actions/deploy-pages@v4
