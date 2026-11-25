@@ -85,6 +85,11 @@ header { padding-bottom: 2px; }
 .series-number { color: var(--blue); font-size: .82rem; font-weight: 800; padding-bottom: 11px; }
 .series-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
 .series-actions button { border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700; padding: 8px 10px; }
+.warmup-controls { position: relative; }
+.warmup-menu { display: grid; gap: 5px; min-width: 190px; position: absolute; top: calc(100% + 5px); left: 0; z-index: 2; padding: 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 25px #0006; }
+.warmup-menu button { text-align: left; }
+.exercise-group.completed-group:not(.hidden) { margin-top: 15px; }
+.exercise-group.completed-group h3 { margin: 0 0 4px; color: var(--green); font-size: .9rem; }
 label { color: var(--muted); display: grid; gap: 5px; font-size: .76rem; }
 input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 10px; font: inherit; }
 .volume { margin: 10px 0 0; font-size: .9rem; }

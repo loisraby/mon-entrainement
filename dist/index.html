@@ -129,8 +129,13 @@
         <div class="series-area">
           <div class="series-list"></div>
           <div class="series-actions">
-            <button class="suggest-warmup" type="button">Ajouter l’échauffement conseillé</button>
-            <button class="warmup-set" type="button">+ Échauffement</button>
+            <div class="warmup-controls">
+              <button class="warmup-choice" type="button" aria-expanded="false">+ Échauffement</button>
+              <div class="warmup-menu hidden" role="group" aria-label="Choisir un échauffement">
+                <button class="suggest-warmup" type="button">Échauffement proposé</button>
+                <button class="warmup-set" type="button">Échauffement personnalisé</button>
+              </div>
+            </div>
             <button class="add-set" type="button">+ Ajouter une série</button>
             <button class="remove-set" type="button">− Retirer la dernière</button>
           </div>

@@ -465,10 +465,15 @@ function commencerSeanceLibre() {
   renderDay(SEANCE_LIBRE_JOUR, brouillon?.jour === SEANCE_LIBRE_JOUR ? brouillon : null);
 }
 
+function cartesExercicesDansOrdre() {
+  return [...workout.querySelectorAll(".exercise-card")]
+    .sort((a, b) => Number(a.dataset.exerciseOrder) - Number(b.dataset.exerciseOrder));
+}
+
 function sauvegarderSeanceEnCours(day, session) {
   const ancienneSeance = getSeanceEnCours();
   const estLeMemeBrouillon = ancienneSeance?.jour === day && ancienneSeance?.nom === session.title;
-  const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
+  const exercices = cartesExercicesDansOrdre().map((card) => {
     const donnees = lireExercice(card);
     return {
       nom: card.querySelector(".exercise-name").textContent,
@@ -763,7 +768,7 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
   const row = document.createElement("div");
   row.className = `series-row${echauffement ? " warmup-row" : ""}${terminee ? " set-completed" : ""}`;
   row.innerHTML = `<span class="series-number"></span><label>Charge (kg)<input class="set-weight" type="number" step="0.5" min="0"></label><label>Reps<input class="set-reps" type="number" step="1" min="0" max="100"></label><label>RIR<select class="set-rir"><option value="">—</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4+</option></select></label><label class="warmup-toggle"><input class="set-warmup" type="checkbox"> Échauff.</label><button class="set-done" type="button">${terminee ? "À refaire" : "✓ Série faite"}</button>`;
-  row.querySelector(".series-number").textContent = echauffement ? "Échauff." : `Série ${list.children.length + 1}`;
+  row.querySelector(".series-number").textContent = echauffement ? "Échauff." : `Série ${list.querySelectorAll(".series-row:not(.warmup-row)").length + 1}`;
   row.querySelector(".set-weight").value = charge;
   if (card.dataset.poidsCorpsActif === "true") {
     row.querySelector(".set-weight").min = "-300";
@@ -786,7 +791,8 @@ function ajouterSerie(card, charge, repetitions = "", echauffement = false, rir 
     sauvegarderSeanceEnCours(exerciseCard.dataset.day, sessions[exerciseCard.dataset.day]);
     if (terminee) lancerReposApresSerie(exerciseCard);
   });
-  list.append(row);
+  if (echauffement) list.insertBefore(row, list.querySelector(".series-row:not(.warmup-row)"));
+  else list.append(row);
 }
 function preparerSeriesInitiales({ ancienExercice, dernierePerformance, nom, day, objectif, chargePlan, semaineLegere }) {
   const force = programmeActif?.type === "force-quatre-jours-v1";
@@ -850,6 +856,17 @@ function updateSessionProgress() {
   const progress = workout.querySelector("#session-progress");
   if (progress) progress.textContent = `${completed} / ${cards.length} exercices faits${passes ? ` · ${passes} passé${passes > 1 ? "s" : ""}` : ""}`;
   return { completed, total: cards.length };
+}
+
+function rangerExercice(card) {
+  const termines = workout.querySelector("#completed-exercises");
+  const aFaire = workout.querySelector("#pending-exercises");
+  if (!termines || !aFaire) return;
+  const destination = card.classList.contains("completed") ? termines : aFaire;
+  const suivant = [...destination.querySelectorAll(".exercise-card")]
+    .find((autre) => Number(autre.dataset.exerciseOrder) > Number(card.dataset.exerciseOrder));
+  destination.insertBefore(card, suivant || null);
+  termines.classList.toggle("hidden", !termines.querySelector(".exercise-card"));
 }
 
 function groupeMusculaire(nom, groupeEnregistre = "") {
@@ -2551,6 +2568,7 @@ function renderDay(day, brouillon = null) {
     ? "Semaine de reprise : une série de moins et charges externes proposées environ 10 % plus légères. Garde 3–4 reps en réserve ; la reprise se termine automatiquement la semaine suivante."
     : "Semaine légère : une série de moins et charges externes proposées environ 10 % plus légères. Ajuste librement selon ta forme.";
   workout.insertAdjacentHTML("beforeend", `<h2>${session.title}</h2><p class="workout-meta">${session.duration}</p>${derniereSeance ? `<p class="last-session">${texteDerniereSeance(derniereSeance)}</p>` : ""}${semaineLegere ? `<p class='deload-banner'>${texteSemaineLegere}</p>` : ""}<p id="session-total" class="muted">Volume total : 0 kg</p><p id="session-progress" class="session-progress">0 / 0 exercices terminés</p><p id="session-save-status" class="save-status">Sauvegarde automatique active</p>`);
+  workout.insertAdjacentHTML("beforeend", `<section id="completed-exercises" class="exercise-group completed-group hidden" aria-label="Exercices terminés"><h3>Terminés</h3></section><section id="pending-exercises" class="exercise-group" aria-label="Exercices à faire"></section>`);
   const brouillonTrouve = brouillon || getSeanceEnCours();
   const seanceEnCours = brouillonTrouve?.jour === day && (!brouillonTrouve.programmeId || brouillonTrouve.programmeId === programmeActif?.id)
     ? brouillonTrouve
@@ -2560,10 +2578,11 @@ function renderDay(day, brouillon = null) {
     .filter((exercice) => exercice.ajoute)
     .map((exercice) => [exercice.nom, exercice.objectif || "3 × 10", exercice.charge || 0, exercice.noteProgramme || "Ajouté pendant la séance", exercice.restSeconds || 90, exercice.coefficientCharge || 1, exercice.supersetAvec || "", true]);
   const nomsSupersetDisponibles = [...session.exercises, ...exercicesAjoutes].map(([nom]) => nom);
-  [...session.exercises, ...exercicesAjoutes].forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = "", estAjoute = false]) => {
+  [...session.exercises, ...exercicesAjoutes].forEach(([name, target, weight, note, restSeconds = 90, coefficientCharge = 1, supersetPlanifie = "", estAjoute = false], ordre) => {
     const card = template.content.cloneNode(true);
     const exerciseCard = card.querySelector(".exercise-card");
     exerciseCard.dataset.programmeName = name;
+    exerciseCard.dataset.exerciseOrder = ordre;
     exerciseCard.dataset.day = day;
     exerciseCard.dataset.restSeconds = restSeconds;
     exerciseCard.dataset.chargeCoefficient = coefficientCharge;
@@ -2731,25 +2750,42 @@ function renderDay(day, brouillon = null) {
       updateVolume(cible);
       sauvegarderSeanceEnCours(day, session);
     });
+    const choixEchauffement = card.querySelector(".warmup-choice");
+    const menuEchauffement = card.querySelector(".warmup-menu");
+    const fermerMenuEchauffement = () => {
+      menuEchauffement.classList.add("hidden");
+      choixEchauffement.setAttribute("aria-expanded", "false");
+    };
+    choixEchauffement.addEventListener("click", () => {
+      const masque = menuEchauffement.classList.toggle("hidden");
+      choixEchauffement.setAttribute("aria-expanded", String(!masque));
+    });
     card.querySelector(".warmup-set").addEventListener("click", (event) => {
       const cible = event.currentTarget.closest(".exercise-card");
-      const premiereCharge = Number(cible.querySelector(".set-weight")?.value) || Number(weight) || 0;
+      const premiereCharge = Number(cible.querySelector(".series-row:not(.warmup-row) .set-weight")?.value) || Number(weight) || 0;
       ajouterSerie(cible, Math.round(premiereCharge * 0.5 * 2) / 2, 10, true);
+      fermerMenuEchauffement();
       updateVolume(cible);
       sauvegarderSeanceEnCours(day, session);
     });
     const estMouvementPrincipal = /développé|squat|deadlift|rowing|traction|tirage/.test(name.toLowerCase());
     const boutonEchauffementConseille = card.querySelector(".suggest-warmup");
-    boutonEchauffementConseille.classList.toggle("hidden", !estMouvementPrincipal);
     boutonEchauffementConseille.addEventListener("click", (event) => {
       const cible = event.currentTarget.closest(".exercise-card");
-      if (cible.querySelector(".warmup-row")) return;
-      const charge = Number(cible.querySelector(".set-weight")?.value) || Number(weight) || 0;
-      if (!charge) return;
-      [[0.4, 10], [0.6, 5], [0.75, 3]].forEach(([ratio, reps]) => {
+      if (cible.querySelector(".warmup-row")) {
+        alert("Un échauffement est déjà présent. Tu peux modifier directement ses séries.");
+        return;
+      }
+      const charge = Number(cible.querySelector(".series-row:not(.warmup-row) .set-weight")?.value) || Number(weight) || 0;
+      if (!charge) {
+        alert("Indique d’abord ta charge de travail, ou choisis un échauffement personnalisé.");
+        return;
+      }
+      const progression = estMouvementPrincipal ? [[0.4, 8], [0.6, 5], [0.75, 3]] : [[0.5, 10]];
+      progression.forEach(([ratio, reps]) => {
         ajouterSerie(cible, Math.round(charge * ratio * 2) / 2, reps, true);
       });
-      event.currentTarget.textContent = "Échauffement ajouté ✓";
+      fermerMenuEchauffement();
       updateVolume(cible);
       sauvegarderSeanceEnCours(day, session);
     });
@@ -2768,6 +2804,7 @@ function renderDay(day, brouillon = null) {
       const completed = exerciseCard.classList.toggle("completed");
       event.currentTarget.textContent = completed ? "Modifier l’exercice" : "Exercice terminé";
       exerciseCard.querySelector(".exercise-status").textContent = completed ? "Terminé ✓" : "";
+      rangerExercice(exerciseCard);
       updateSessionProgress();
       sauvegarderSeanceEnCours(day, session);
       if (completed) lancerReposApresSerie(exerciseCard);
@@ -2789,11 +2826,13 @@ function renderDay(day, brouillon = null) {
       }
       event.currentTarget.textContent = passe ? "Faire l’exercice" : "Passer";
       exerciseCard.querySelector(".exercise-status").textContent = passe ? "Passé" : "";
+      rangerExercice(exerciseCard);
       updateVolume(exerciseCard);
       updateSessionProgress();
       sauvegarderSeanceEnCours(day, session);
     });
-    workout.append(card);
+    workout.querySelector("#pending-exercises").append(card);
+    rangerExercice(exerciseCard);
   });
 
   workout.querySelectorAll(".exercise-card").forEach(updateVolume);
@@ -2883,7 +2922,7 @@ function renderDay(day, brouillon = null) {
       : "";
     if (!confirm(`Enregistrer cette séance ? ${progress.completed} / ${progress.total} exercices sont marqués comme terminés.${rappel}`)) return;
     const volume = updateTotalVolume();
-    const exercices = [...workout.querySelectorAll(".exercise-card")].map((card) => {
+    const exercices = cartesExercicesDansOrdre().map((card) => {
       const donnees = lireExercice(card);
       return {
         nom: card.querySelector(".exercise-name").textContent,
