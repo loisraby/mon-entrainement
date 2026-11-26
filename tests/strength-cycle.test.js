@@ -25,6 +25,7 @@ test('strength cycle is stored beside the active program with four distinct sess
   assert.deepEqual(Object.keys(programmes[1].seances), ['Lun', 'Mar', 'Jeu', 'Ven']);
   assert.equal(programmes[1].seances.Lun.exercises[0][0], 'Squat barre');
   assert.equal(programmes[1].seances.Jeu.exercises[0][0], 'Soulevé de terre');
+  assert.ok(programmes[1].seances.Jeu.exercises.some((item) => item[0] === 'Leg curl assis'));
   assert.equal(programmes[1].seances.Ven.exercises[0][0], 'Traction lestée ou assistée');
   assert.ok(programmes[1].seances.Lun.exercises.every((item) => item[2] === null));
   vm.runInContext('creerProgrammeForce()', context);

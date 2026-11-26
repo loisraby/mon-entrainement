@@ -9,6 +9,11 @@ const MENSURATIONS_CONFIG_KEY = "mensurations_config_v1";
 const PROFIL_NUTRITION_KEY = "profil_nutrition_v1";
 const BACKUP_SESSIONS_KEY = "seances_lors_derniere_sauvegarde_v1";
 const BACKUP_DATE_KEY = "date_derniere_sauvegarde_v1";
+const ADAPTATIONS_SALLE = Object.assign(Object.create(null), {
+  "Écarté poulie haute (pecs)": "Pec deck",
+  "Écarté poulie basse (pecs)": "Pec deck",
+  "Leg curl couché": "Leg curl assis",
+});
 const SEANCE_LIBRE_JOUR = "__libre__";
 const SEANCE_LIBRE = {
   title: "Séance libre / cabinet",
@@ -90,6 +95,7 @@ const VARIANTES = {
   "Développé militaire barre": ["Développé militaire haltères", "Shoulder press machine"],
   "Écarté poulie haute (pecs)": ["Pec deck", "Écarté haltères incliné"],
   "Écarté poulie basse (pecs)": ["Pec deck", "Écarté haltères incliné"],
+  "Pec deck": ["Écarté poulie haute (pecs)", "Écarté poulie basse (pecs)", "Écarté haltères incliné"],
   "Élévations latérales haltères": ["Élévations latérales câble", "Machine élévations latérales"],
   "Élévations latérales câble": ["Élévations latérales haltères", "Machine élévations latérales"],
   "Extensions triceps poulie haute": ["Pushdown triceps barre droite", "Extensions triceps haltère"],
@@ -99,6 +105,7 @@ const VARIANTES = {
   "Romanian deadlift": ["Soulevé de terre jambes tendues", "Leg curl assis"],
   "Presse à cuisses": ["Hack squat", "Squat Smith machine"],
   "Leg curl couché": ["Leg curl assis", "Leg curl debout"],
+  "Leg curl assis": ["Leg curl couché", "Leg curl debout"],
   "Fente marchée haltères": ["Split squat bulgare", "Fentes Smith machine"],
   "Hip thrust barre": ["Hip thrust machine", "Glute bridge barre"],
   "Rowing barre pronation": ["Rowing T-bar", "Rowing machine"],
@@ -1623,6 +1630,79 @@ function sauvegarderProgrammeActif() {
   sauvegarderProgrammes(programmes);
 }
 
+function remplacerExercicePlanifie(seance, index, ancienNom, nouveauNom) {
+  const exercice = seance?.exercises?.[index];
+  if (!exercice || exercice[0] !== ancienNom || ancienNom === nouveauNom
+    || seance.exercises.some((autre, autreIndex) => autreIndex !== index && autre[0] === nouveauNom)) return false;
+  exercice[0] = nouveauNom;
+  exercice[2] = null;
+  exercice[5] = 1;
+  seance.exercises.forEach((autre) => {
+    if (autre[6] === ancienNom) autre[6] = nouveauNom;
+  });
+  return true;
+}
+
+function adapterExercicesSalle() {
+  const programmes = getProgrammes();
+  const idActif = localStorage.getItem(PROGRAMME_ACTIF_KEY);
+  const programmeUtilisateur = programmes.find((programme) => programme.id === idActif
+    && programme.type === "pplpp-equilibre-v1" && programme.sourceProgrammeId === "hypertrophie");
+  if (!programmeUtilisateur) return;
+
+  let programmeModifie = false;
+  programmes.filter((programme) => programme.id === idActif || programme.type === "force-quatre-jours-v1")
+    .forEach((programme) => Object.values(programme.seances || {}).forEach((seance) => {
+      (seance.exercises || []).forEach((exercice) => {
+        const remplacement = ADAPTATIONS_SALLE[exercice[0]];
+        if (remplacement) {
+          exercice[0] = remplacement;
+          exercice[2] = null; // Les charges de deux machines différentes ne sont pas interchangeables.
+          exercice[5] = 1;
+          programmeModifie = true;
+        }
+        if (ADAPTATIONS_SALLE[exercice[6]]) {
+          exercice[6] = ADAPTATIONS_SALLE[exercice[6]];
+          programmeModifie = true;
+        }
+      });
+    }));
+  if (programmeModifie) sauvegarderProgrammes(programmes);
+
+  const historique = getHistorique();
+  let historiqueModifie = false;
+  historique.filter((seance) => seance.programmeId !== PROGRAMME_DEBUTANTE.id)
+    .forEach((seance) => (seance.exercices || []).forEach((exercice) => {
+      if (exercice.nom === "Leg curl couché") { exercice.nom = "Leg curl assis"; historiqueModifie = true; }
+      if (exercice.programmeNom === "Leg curl couché") { exercice.programmeNom = "Leg curl assis"; historiqueModifie = true; }
+      if (exercice.supersetAvec === "Leg curl couché") { exercice.supersetAvec = "Leg curl assis"; historiqueModifie = true; }
+    }));
+  if (historiqueModifie) localStorage.setItem("historique", JSON.stringify(historique));
+
+  const brouillon = getSeanceEnCours();
+  if (brouillon?.programmeId === idActif) {
+    let brouillonModifie = false;
+    (brouillon.exercices || []).forEach((exercice) => {
+      if (ADAPTATIONS_SALLE[exercice.programmeNom]) {
+        exercice.programmeNom = ADAPTATIONS_SALLE[exercice.programmeNom];
+        brouillonModifie = true;
+      }
+      if (exercice.nom === "Leg curl couché") { exercice.nom = "Leg curl assis"; brouillonModifie = true; }
+      if (ADAPTATIONS_SALLE[exercice.supersetAvec]) {
+        exercice.supersetAvec = ADAPTATIONS_SALLE[exercice.supersetAvec];
+        brouillonModifie = true;
+      }
+    });
+    if (brouillonModifie) localStorage.setItem(DRAFT_KEY, JSON.stringify(brouillon));
+  }
+
+  const notes = getNotesExercices();
+  if (notes["Leg curl couché"] && !notes["Leg curl assis"]) {
+    notes["Leg curl assis"] = notes["Leg curl couché"];
+    localStorage.setItem(NOTES_EXERCICES_KEY, JSON.stringify(notes));
+  }
+}
+
 function terminerRepriseExpiree() {
   if (!programmeActif?.repriseInitiale || !programmeActif.semaineLegere) return;
   const premiereSeance = getSeancesRealisees()
@@ -1808,12 +1888,17 @@ function copierProgrammeActif() {
 }
 function construireSeancesPPLPP(source) {
   const prendre = (jour, nom, objectif, repos, conseil = "") => {
-    const exercice = source.seances?.[jour]?.exercises?.find((item) => item[0] === nom);
+    const exercice = source.seances?.[jour]?.exercises?.find((item) => item[0] === nom || item[0] === ADAPTATIONS_SALLE[nom]);
     if (!exercice) throw new Error(`${jour} — ${nom}`);
     const copie = [...exercice];
     copie[1] = objectif;
     copie[3] = [exercice[3], conseil].filter(Boolean).join(" · ");
     copie[4] = repos;
+    if (ADAPTATIONS_SALLE[nom]) {
+      copie[0] = ADAPTATIONS_SALLE[nom];
+      copie[2] = null;
+      copie[5] = 1;
+    }
     if (copie.length < 6) copie[5] = 1;
     copie[6] = ""; // Les anciens supersets peuvent relier des exercices désormais séparés.
     return copie;
@@ -2002,7 +2087,7 @@ function creerProgrammeForce() {
           exercice("Soulevé de terre", "2 × 3–5", "Classique · 3–4 min de repos · RIR 2–3, dos stable ; ne force pas une rep qui se dégrade.", 240),
           exercice("Squat barre", "3 × 5–6", "Passage léger et technique, environ RIR 3 ; sans chercher la charge du lundi.", 180),
           exercice("Squat bulgare", "2 × 8–10/côté", "Contrôle l’appui ; variante possible : step-up.", 120),
-          exercice("Leg curl couché", "2 × 10–15", "Descente contrôlée · RIR 1–3.", 90),
+          exercice("Leg curl assis", "2 × 10–15", "Descente contrôlée · RIR 1–3.", 90),
           exercice("Extensions lombaires", "2 × 10–15", "Facultatif en fin de séance ; commence au PDC, ajoute un disque seulement si bien maîtrisé.", 120),
         ],
       },
@@ -2399,6 +2484,7 @@ function afficherEditeurProgramme() {
 async function chargerProgramme() {
   const reponse = await fetch("programme.json");
   const programmeSource = await reponse.json();
+  adapterExercicesSalle();
   let programmes = getProgrammes();
   if (programmes.length === 0) {
     programmes = [{ id: "demarrage", nom: "Mon programme", seances: programmeSource.seances || {} }];
@@ -2661,9 +2747,35 @@ function renderDay(day, brouillon = null) {
     autreOption.textContent = "Autre exercice…";
     selectVariante.append(autreOption);
     selectVariante.value = nomEffectif;
+    const boutonVariantePermanente = card.querySelector(".save-variant-program");
+    boutonVariantePermanente.classList.toggle("hidden", estAjoute || day === SEANCE_LIBRE_JOUR || nomEffectif === name);
 
     card.querySelector(".variant-button").addEventListener("click", (event) => {
       event.currentTarget.closest(".exercise-card").querySelector(".variant-picker").classList.toggle("hidden");
+    });
+    boutonVariantePermanente.addEventListener("click", () => {
+      const nouveauNom = exerciseCard.querySelector(".exercise-name").textContent;
+      const ancienNom = exerciseCard.dataset.programmeName;
+      const index = Number(exerciseCard.dataset.exerciseOrder);
+      if (!sessions[day]?.exercises?.[index] || sessions[day].exercises[index][0] !== ancienNom
+        || sessions[day].exercises.some((autre, autreIndex) => autreIndex !== index && autre[0] === nouveauNom)) {
+        alert("Ce remplacement ne peut pas être enregistré : l’exercice a changé ou existe déjà dans cette séance.");
+        return;
+      }
+      sauvegarderSeanceEnCours(day, session);
+      const brouillonActuel = getSeanceEnCours();
+      if (!remplacerExercicePlanifie(session, index, ancienNom, nouveauNom)) return;
+      sauvegarderProgrammeActif();
+      const exerciceBrouillon = brouillonActuel?.exercices?.[index];
+      if (exerciceBrouillon) {
+        exerciceBrouillon.programmeNom = nouveauNom;
+        exerciceBrouillon.coefficientCharge = 1;
+      }
+      (brouillonActuel?.exercices || []).forEach((exercice) => {
+        if (exercice.supersetAvec === ancienNom) exercice.supersetAvec = nouveauNom;
+      });
+      if (brouillonActuel) localStorage.setItem(DRAFT_KEY, JSON.stringify(brouillonActuel));
+      renderDay(day, brouillonActuel);
     });
     selectVariante.addEventListener("change", (event) => {
       const exerciseCard = event.currentTarget.closest(".exercise-card");
@@ -2697,6 +2809,10 @@ function renderDay(day, brouillon = null) {
       selectVariante.value = nouveauNom;
       exerciseCard.querySelector(".exercise-name").textContent = nouveauNom;
       exerciseCard.dataset.groupePrincipal = groupePrincipal;
+      const coefficientVariante = nouveauNom === name ? coefficientCharge : 1;
+      exerciseCard.dataset.originalChargeCoefficient = coefficientVariante;
+      exerciseCard.dataset.chargeCoefficient = coefficientVariante;
+      boutonVariantePermanente.classList.toggle("hidden", estAjoute || day === SEANCE_LIBRE_JOUR || nouveauNom === name);
       if (estAjoute) exerciseCard.querySelector(".exercise-note").textContent = `${note} · Groupe principal : ${exerciseCard.dataset.groupePrincipal}`;
       const derniere = trouverDernierePerformance(nouveauNom);
       configurerPoidsCorps(exerciseCard, nouveauNom, derniere?.poidsCorps);

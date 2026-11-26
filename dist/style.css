@@ -196,6 +196,7 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 
 .variant-picker { margin-top: 10px; }
 .variant-picker select { width: 100%; }
+.save-variant-program { display: block; margin-top: 9px; border: 1px solid var(--green); border-radius: 9px; background: rgba(46, 199, 154, .08); color: var(--green); cursor: pointer; font: inherit; font-size: .82rem; font-weight: 700; padding: 9px 10px; }
 
 .superset-area { margin-top: 14px; }
 .superset-area summary { color: var(--muted); cursor: pointer; font-size: .82rem; font-weight: 700; }
